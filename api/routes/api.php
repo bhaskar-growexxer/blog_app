@@ -27,8 +27,10 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 
 Route::group(['middleware' => 'auth:sanctum', 'prefix' => 'blogs', 'controller' => BlogController::class], function () {
     Route::get('/', 'index');
-    Route::post('/store', 'store');
-    Route::get('/{id}', 'BlogController@show');
-    Route::put('/{id}', 'BlogController@update');
-    Route::delete('/{id}', 'BlogController@destroy');
+    Route::post('/', 'store');
+
+    $blogId = '/{id}';
+    Route::get($blogId, 'show');
+    Route::put($blogId, 'update');
+    Route::delete($blogId, 'destroy');
 });
