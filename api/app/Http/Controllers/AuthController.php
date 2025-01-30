@@ -2,79 +2,75 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Blog;
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
-    //create function for login , we are using sanctum middleware
+    //hanles login functionality
     public function login(Request $request)
     {
-        $request->validate([
-            'email' => 'required|email',
-            'password' => 'required',
-        ]);
+        try{
+            $request->validate([
+                'email' => 'required|email',
+                'password' => 'required',
+            ]);
 
-        if (!auth()->attempt($request->only('email', 'password'))) {
-            return response([
-                'error' => ['Invalid credentials.']
-            ], 404);
+            $credentials = $request->only('email', 'password');
+
+            if (Auth::attempt($credentials)) {
+                $user = Auth::user();
+                $token = $user->createToken('api-token')->plainTextToken;
+                return response()->json(['user' => $user, 'token' => $token]);
+            }
+
+            return response()->json(['isSuccess' => false,'message' => 'Invalid Credentials'], 401);
+
+        }catch (ValidationException $e) {
+            return response()->json([
+                'isSuccess' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
         }
+    }
 
-        $user = auth()->user();
 
-        $token = $user->createToken('token')->plainTextToken;
+    //handles register functionality
+    public function register(Request $request)
+    {
+        try{
+            $request->validate([
+                'name' => 'required|string|max:255',
+                'email' => 'required|string|email|max:255|unique:users',
+                'password' => 'required|string|min:4',
+            ]);
 
-        return response()->json([
-            'token' => $token,
-            'user' => $user
-        ]);
+            $hashedPassword = Hash::make($request->password);
+
+            $user = User::create([
+                'name' => $request->name,
+                'email' => $request->email,
+                'password' => $hashedPassword,
+            ]);
+
+            $token = $user->createToken('api-token')->plainTextToken;
+
+            return response()->json([
+                'user' => $user,
+                'token' => $token,
+            ], 201);
+
+        }catch (ValidationException $e) {
+            return response()->json([
+                'isSuccess' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
+        }
     }
 
 }
-
-// //authenticate
-// <?php
-
-// namespace App\Http\Middleware;
-
-// use Illuminate\Auth\Middleware\Authenticate as Middleware;
-// use Illuminate\Http\Request;
-
-// class Authenticate extends Middleware
-// {
-//     /**
-//      * Get the path the user should be redirected to when they are not authenticated.
-//      */
-//     protected function redirectTo(Request $request): ?string
-//     {
-//         return $request->expectsJson() ? null : route('api/auth/login');
-//     }
-// }
-
-
-// //api.php
-
-// Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
-//     return $request->user();
-// });
-
-// //user.php
-// class User extends Authenticatable
-// {
-//     use HasApiTokens, HasFactory, Notifiable;
-
-//     /**
-//      * The attributes that are mass assignable.
-//      *
-//      * @var array<int, string>
-//      */
-//     protected $fillable = [
-//         'name',
-//         'email',
-//         'password',
-//     ];
-//}
-
-
-// //  create a login function in the controller and also fill code in the middleware file.

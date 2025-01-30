@@ -17,14 +17,15 @@ use App\Http\Controllers\AuthController;
 */
 
 Route::group(['prefix' => 'auth', 'controller' => AuthController::class], function () {
-    Route::get('/login', 'login');
+    Route::post('/login', ['as' => 'login', 'uses' => 'login']);
+    Route::post('/register', 'register');
 });
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
 
-Route::group(['prefix' => 'blogs', 'controller' => BlogController::class], function () {
+Route::group(['middleware' => 'auth:sanctum', 'prefix' => 'blogs', 'controller' => BlogController::class], function () {
     Route::get('/', 'index');
     Route::post('/store', 'store');
     Route::get('/{id}', 'BlogController@show');
