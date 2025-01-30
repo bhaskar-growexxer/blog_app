@@ -2,6 +2,8 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\BlogController;
+use App\Http\Controllers\AuthController;
 
 /*
 |--------------------------------------------------------------------------
@@ -14,6 +16,18 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
+Route::group(['prefix' => 'auth', 'controller' => AuthController::class], function () {
+    Route::get('/login', 'login');
+});
+
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
+});
+
+Route::group(['prefix' => 'blogs', 'controller' => BlogController::class], function () {
+    Route::get('/', 'index');
+    Route::post('/store', 'store');
+    Route::get('/{id}', 'BlogController@show');
+    Route::put('/{id}', 'BlogController@update');
+    Route::delete('/{id}', 'BlogController@destroy');
 });
