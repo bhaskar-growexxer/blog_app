@@ -23,7 +23,12 @@ class AuthController extends Controller
             if (Auth::attempt($credentials)) {
                 $user = Auth::user();
                 $token = $user->createToken('api-token')->plainTextToken;
-                return response()->json(['user' => $user, 'token' => $token]);
+
+                $user = $user->toArray();
+                $dateTime = new DateTime($user['created_at']);
+                $user['created_at'] = $dateTime->setTimezone(new DateTimeZone(self::TIMEZONE))->format('H:i d M Y');
+
+                return response()->json(['isSuccess' => true,'user' => $user, 'token' => $token]);
             }
 
             return response()->json(['isSuccess' => false,'message' => 'Invalid Credentials'], 401);
@@ -59,6 +64,7 @@ class AuthController extends Controller
             $token = $user->createToken('api-token')->plainTextToken;
 
             return response()->json([
+                'isSuccess' => true,
                 'user' => $user,
                 'token' => $token,
             ], 201);
@@ -70,6 +76,16 @@ class AuthController extends Controller
                 'errors' => $e->errors(),
             ], 422);
         }
+    }
+
+    //handles logout functionality
+    public function logout(Request $request)
+    {
+        if ($request->user()) {
+            $request->user()->tokens()->delete();
+            return response()->json(['isSuccess' => true, 'message' => 'Logged out successfully']);
+        }
+        return response()->json(['isSuccess' => false, 'message' => 'User not authenticated'], 401);
     }
 
 }

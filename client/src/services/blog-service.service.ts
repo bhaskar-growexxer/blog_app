@@ -10,6 +10,8 @@ export class BlogServiceService {
 
   private readonly apiUrl = `${environment.api_url}/blogs`;
 
+  public readonly blogCategories : string[] = ['Technology', 'Health', 'Science', 'Business', 'Entertainment', 'Sports', 'Education', 'Lifestyle', 'Politics', 'Travel'];
+
   constructor(private readonly http: HttpClient) {}
 
   // Get all blogs
@@ -24,7 +26,7 @@ export class BlogServiceService {
 
   // Create a new blog
   createBlog(blogData: { title: string; content: string }): Observable<any> {
-    return this.http.post(`${this.apiUrl}/store`, blogData);
+    return this.http.post(`${this.apiUrl}`, blogData);
   }
 
   // Update a blog by ID

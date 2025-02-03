@@ -5,10 +5,13 @@ namespace App\Http\Controllers;
 use App\Models\Blog;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
+use DateTime;
+use DateTimeZone;
 
 class BlogController extends Controller
 {
     const ID_REQUIRED_MESSAGE = "ID is required";
+    const TIMEZONE = 'Asia/Kolkata';
 
     /**
      * Display a listing of the resource.
@@ -27,6 +30,13 @@ class BlogController extends Controller
         else{
             $blogs = Blog::all();
         }
+
+        $blogs = array_map(function($blog){
+
+            $dateTime = new DateTime($blog['created_at']);
+            $blog['created_at'] = $dateTime->setTimezone(new DateTimeZone(self::TIMEZONE))->format('H:i d M Y');
+            return $blog;
+        }, $blogs->toArray());
 
         return response()->json(['isSuccess' => true, 'data' => $blogs ?? []],200);
 
@@ -51,6 +61,10 @@ class BlogController extends Controller
                 'category' => $request->category,
                 'description' => $request->description,
             ]);
+
+            $blog = $blog->toArray();
+            $dateTime = new DateTime($blog['created_at']);
+            $blog['created_at'] = $dateTime->setTimezone(new DateTimeZone(self::TIMEZONE))->format('H:i d M Y');
 
             return response()->json(['isSuccess' => true, 'data' => $blog],200);
 

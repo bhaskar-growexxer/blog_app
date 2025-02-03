@@ -1,1 +1,28 @@
-<p>new-blog works!</p>
+<div class="card p-4">
+<h3 mat-dialog-title class="mb-2">New Blog</h3>
+<div mat-dialog-content>
+  <form [formGroup]="blogForm" (ngSubmit)="onSubmit()">
+    <div class="mb-3">
+      <label for="title" class="form-label">Blog Title</label>
+      <input id="title" formControlName="title" type="text" class="form-control" placeholder="Enter blog title">
+    </div>
+
+    <div class="mb-3">
+      <label for="category" class="form-label">Category</label>
+      <select id="category" formControlName="category" class="form-select">
+        <option value="">Select Category</option>
+        <option *ngFor="let category of categories()" [value]="category">{{ category }}</option>
+      </select>
+    </div>
+
+    <div class="mb-3">
+      <label for="description" class="form-label">Description</label>
+      <textarea id="description" formControlName="description" class="form-control" rows="4" placeholder="Enter blog description"></textarea>
+    </div>
+  </form>
+</div>
+
+<div mat-dialog-actions>
+  <button mat-button (click)="onSubmit()" [disabled]="blogForm.invalid">Create</button>
+</div>
+</div>

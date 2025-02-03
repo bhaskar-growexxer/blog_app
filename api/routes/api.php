@@ -16,16 +16,19 @@ use App\Http\Controllers\AuthController;
 |
 */
 
+define('AUTH_SANCTUM', 'auth:sanctum');
+
 Route::group(['prefix' => 'auth', 'controller' => AuthController::class], function () {
     Route::post('/login', ['as' => 'login', 'uses' => 'login']);
     Route::post('/register', 'register');
+    Route::post('/logout', ['middleware' => AUTH_SANCTUM,'as' => 'logout', 'uses' => 'logout']);
 });
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
 
-Route::group(['middleware' => 'auth:sanctum', 'prefix' => 'blogs', 'controller' => BlogController::class], function () {
+Route::group(['middleware' => AUTH_SANCTUM, 'prefix' => 'blogs', 'controller' => BlogController::class], function () {
     Route::get('/', 'index');
     Route::post('/', 'store');
 

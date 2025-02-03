@@ -1,52 +1,97 @@
-<div class="container mt-5">
-    <div class="row">
-      <div class="col-md-12">
-        <h2>Blog List</h2>
+<!-- Navbar -->
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <!-- Container wrapper -->
+    <div class="container-fluid m-1">
+      <!-- Navbar brand -->
+      <a class="navbar-brand">Growexx</a>
   
-        <!-- Search Input -->
-        <div class="form-group">
-          <input
-            type="text"
-            class="form-control"
-            [(ngModel)]="searchQuery"
-            placeholder="Search blogs..."
-            (input)="filterBlogs()"
-          />
+      <!-- Toggle button -->
+      <button
+        class="navbar-toggler"
+        type="button"
+        aria-expanded="false"
+        aria-label="Toggle navigation"
+      >
+        <i class="fas fa-bars"></i>
+      </button>
+  
+      <!-- Collapsible wrapper -->
+      <div
+        class="collapse navbar-collapse"
+        id="navbarSupportedContent"
+        mdbCollapse
+      >
+        <!-- Left links -->
+        <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+          <li class="nav-item my-2">
+            <button class="nav-link active" aria-current="page" (click)="displaySelfBlogs=false;filterBlogs()">Home</button>
+          </li>
+          <li class="nav-item my-2">
+            <button class="nav-link" (click)="displaySelf()">My Blogs</button>
+          </li>
+
+          <li class="nav-item my-2">
+            <button class="nav-link" (click)="openNewBlogModal()">New Blog</button>
+          </li>
+          
+        </ul>
+        <!-- Left links -->
+  
+        <!-- Search form -->
+        <form class="d-flex input-group w-auto">
+          
+          <button class="btn btn-outline-primary" type="button" (click)="logout()">
+            Logout
+          </button>
+        </form>
+      </div>
+      <!-- Collapsible wrapper -->
+    </div>
+    <!-- Container wrapper -->
+</nav>
+<!-- Navbar -->
+
+
+<div class="row col-8 m-auto mt-4">
+    <div class="col-md-6 mb-4">
+        <input type="text" class="form-control" placeholder="Search blogs..." [(ngModel)]="searchQuery"
+        (input)="filterBlogs()">
+    </div>
+
+    <div class="col-md-6 mb-4">
+        <select class="form-select" aria-label="Default select example" [(ngModel)]="selectedCategory" (change)="filterBlogs()">
+            <option selected value="">All</option>
+            <option *ngFor="let category of blogCategories" value="{{category}}">{{category}}</option>
+            </select>
+    </div>
+</div>
+
+
+<div class="row col-8 m-auto mt-4" *ngIf="displaySelfBlogs">
+
+    <div class="col-md-8 mb-4 m-auto"> 
+      <div class="card text-center">
+        <div class="card-header">Profile</div>
+        <div class="card-body">
+          <h5 class="card-title">{{user.name}}</h5>
+          <p class="card-text">Total Blogs : {{user.totalBlogs}}</p>
+          <button (click)="openNewBlogModal()" class="btn btn-primary">New Blog</button>
         </div>
-  
-        <!-- Category Filter -->
-        <div class="form-group">
-          <select
-            class="form-control"
-            [(ngModel)]="selectedCategory"
-            (change)="filterBlogs()"
-          >
-            <option value="">All Categories</option>
-            <option value="Technology">Technology</option>
-            <option value="Travel">Travel</option>
-            <option value="Food">Food</option>
-            <option value="Lifestyle">Lifestyle</option>
-          </select>
-        </div>
-  
-        <!-- Reset Filters Button -->
-        <button class="btn btn-secondary mb-3" (click)="resetFilters()">Reset Filters</button>
-  
-        <!-- Blog List -->
-        <div *ngFor="let blog of filteredBlogs" class="card mb-3">
-          <div class="card-body">
-            <h5 class="card-title">{{ blog.title }}</h5>
-            <p class="card-text">{{ blog.description }}</p>
-            <p class="card-text">
-              <small class="text-muted">Category: {{ blog.category }}</small>
-            </p>
-          </div>
-        </div>
-  
-        <!-- No Blogs Found Message -->
-        <div *ngIf="filteredBlogs.length === 0" class="alert alert-warning">
-          No blogs found.
-        </div>
+        <div class="card-footer text-muted">Joined At : {{user.created_at}}</div>
       </div>
     </div>
-  </div>
+</div>
+
+  
+<div class="row col-8 m-auto mt-4">
+    <div class="col-md-6 mb-4" *ngFor="let blog of filteredBlogs">
+      <div class="card text-center">
+        <div class="card-header">{{blog.category}}</div>
+        <div class="card-body">
+          <h5 class="card-title">{{blog.title}}</h5>
+          <p class="card-text">{{blog.description}}</p>
+        </div>
+        <div class="card-footer text-muted">Blog By {{ blog.author}} <span class="mx-2"> {{blog.created_at}} </span></div>
+      </div>
+    </div>
+</div>
