@@ -84,14 +84,23 @@
 
   
 <div class="row col-8 m-auto mt-4">
-    <div class="col-md-6 mb-4" *ngFor="let blog of filteredBlogs">
-      <div class="card text-center">
-        <div class="card-header">{{blog.category}}</div>
-        <div class="card-body">
-          <h5 class="card-title">{{blog.title}}</h5>
-          <p class="card-text">{{blog.description}}</p>
-        </div>
-        <div class="card-footer text-muted">Blog By {{ blog.author}} <span class="mx-2"> {{blog.created_at}} </span></div>
+  <div class="col-md-6 mb-4" *ngFor="let blog of filteredBlogs">
+    <div class="card text-center d-flex flex-column" style="max-height: 50vh; min-height: 25vh;">
+      <div class="card-header text-primary">
+        {{ blog.category }}
+        <span *ngIf="displaySelfBlogs" class="row w-auto">
+          <i class="bi bi-pencil-square w-10" (click)="openEditBlogModal(blog)" (keyup)="openEditBlogModal(blog)"></i>
+        </span>
+      </div>
+      <div class="card-body flex-grow-1" style="overflow-y: auto;">
+        <h5 class="card-title">{{ blog.title }}</h5>
+        <p class="card-text">{{ blog.description }}</p>
+      </div>
+      <div class="card-footer text-muted">
+        Blog By {{ blog.author }} <span class="mx-2"> {{ blog.created_at }}
+          <i *ngIf="displaySelfBlogs" class="bi bi-trash text-danger mx-2 w-10" (click)="deleteBlog(blog.id)" (keyup)="deleteBlog(blog.id)"></i>
+        </span>
       </div>
     </div>
+  </div>
 </div>

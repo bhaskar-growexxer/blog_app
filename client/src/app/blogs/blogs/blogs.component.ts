@@ -6,6 +6,7 @@ import { Router, RouterModule } from '@angular/router';
 import { NewBlogComponent } from '../new-blog/new-blog.component';
 import { MatDialog } from '@angular/material/dialog'; 
 import { AuthServiceService } from '../../../services/auth-service.service';
+import { EditBlogComponent } from '../edit-blog/edit-blog.component';
 
 @Component({
   selector: 'app-blogs',
@@ -51,7 +52,8 @@ export class BlogsComponent {
   filterBlogs() {
     this.filteredBlogs = this.blogs.filter((blog) => {
       let matchesSearch = blog.title.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-                            blog.description.toLowerCase().includes(this.searchQuery.toLowerCase());
+                          blog.author.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
+                          blog.description.toLowerCase().includes(this.searchQuery.toLowerCase());
       if (this.displaySelfBlogs) {
         matchesSearch = matchesSearch && blog.author === this.user.email;
       }
@@ -72,9 +74,10 @@ export class BlogsComponent {
     dialogRef.afterClosed().subscribe(blog => {
       if (blog) {
 
-        this.blogs.push(blog);
+        this.blogs.unshift(blog);
 
         let matchesSearch = blog.title.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
+                            blog.author.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
                             blog.description.toLowerCase().includes(this.searchQuery.toLowerCase());
         if (this.displaySelfBlogs) {
           matchesSearch = matchesSearch && blog.author === this.user.email;
@@ -85,6 +88,45 @@ export class BlogsComponent {
         }
 
         console.log('New blog added:', blog);
+      }
+    });
+  }
+
+  openEditBlogModal(blog: any) {
+    const dialogRef =this.dialog.open(EditBlogComponent,{width:'500px',height:'500px',data: blog});
+
+    dialogRef.afterClosed().subscribe(blog => {
+      if (blog) {
+
+        this.blogs = this.blogs.map( b => b.id === blog.id ? blog : b);
+
+        let matchesSearch = blog.title.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
+                            blog.author.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
+                            blog.description.toLowerCase().includes(this.searchQuery.toLowerCase());
+        if (this.displaySelfBlogs) {
+          matchesSearch = matchesSearch && blog.author === this.user.email;
+        }
+
+        if(matchesSearch && (!this.selectedCategory || blog.category === this.selectedCategory)){
+          this.filteredBlogs = this.filteredBlogs.map( b => b.id === blog.id ? blog : b);
+        }
+
+        console.log('New blog added:', blog);
+      }
+    });
+  }
+
+  deleteBlog(id: number) {
+    this.blogService.deleteBlog(id).subscribe({
+      next : (respoinse) => {
+        console.log('Blog deleted:', respoinse);
+        if(respoinse.isSuccess) {
+          this.blogs = this.blogs.filter((blog) => blog.id !== id);
+          this.filteredBlogs = this.filteredBlogs.filter((blog) => blog.id !== id);
+        }
+      },
+      error : (error) => {
+        console.error('Error deleting blog:', error);
       }
     });
   }

@@ -25,8 +25,7 @@ class AuthController extends Controller
                 $token = $user->createToken('api-token')->plainTextToken;
 
                 $user = $user->toArray();
-                $dateTime = new DateTime($user['created_at']);
-                $user['created_at'] = $dateTime->setTimezone(new DateTimeZone(self::TIMEZONE))->format('H:i d M Y');
+                $user['created_at'] = explode('T', $user['created_at'])[0];
 
                 return response()->json(['isSuccess' => true,'user' => $user, 'token' => $token]);
             }

@@ -95,12 +95,18 @@ class BlogController extends Controller
     {
         if(!empty($id)){
             $blog = Blog::find($request['id']);
-            $blog->update([
-                'title' => $request->title ?? $blog->title,
-                'category' => $request->category ?? $blog->category,
-                'description' => $request->description ?? $blog->description,
-            ]);
-            return response()->json(['isSuccess' => true, 'data' =>$blog], 200);
+
+            if($blog->exists() && $blog->author == $request->user()->email){
+                $blog->update([
+                    'title' => $request->title ?? $blog->title,
+                    'category' => $request->category ?? $blog->category,
+                    'description' => $request->description ?? $blog->description,
+                ]);
+                return response()->json(['isSuccess' => true, 'data' =>$blog], 200);
+            }
+            
+            return response()->json(['isSuccess' => false, 'message' => 'You are not authorized to delete this blog'], 401);
+
         }
         return response()->json(['isSuccess' => false, 'message' => self::ID_REQUIRED_MESSAGE], 422);
     }
@@ -108,12 +114,16 @@ class BlogController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(String $id)
+    public function destroy(String $id,Request $request)
     {
         if(!empty($id)){
             $blog = Blog::find($id);
-            $blog->delete();
-            return response()->json(['isSuccess' => true, 'message' => 'blog deleted'], 200);
+            if($blog->exists() && $blog->author == $request->user()->email){
+                $blog->delete();
+                return response()->json(['isSuccess' => true, 'message' => 'blog deleted'], 200);
+            }
+            return response()->json(['isSuccess' => false, 'message' => 'You are not authorized to delete this blog'], 401);
+
         }
         return response()->json(['isSuccess' => false, 'message' => self::ID_REQUIRED_MESSAGE], 422);
     }

@@ -25,13 +25,13 @@ export class BlogServiceService {
   }
 
   // Create a new blog
-  createBlog(blogData: { title: string; content: string }): Observable<any> {
+  createBlog(blogData: { title: string; description: string }): Observable<any> {
     return this.http.post(`${this.apiUrl}`, blogData);
   }
 
   // Update a blog by ID
-  updateBlog(id: number, blogData: { title: string; content: string }): Observable<any> {
-    return this.http.put(`${this.apiUrl}/${id}`, blogData);
+  updateBlog(blogData: { id: number; title: string; description: string }): Observable<any> {
+    return this.http.put(`${this.apiUrl}/${blogData.id}`, blogData);
   }
 
   // Delete a blog by ID
