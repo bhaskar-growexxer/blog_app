@@ -1,8 +1,20 @@
-    <div class="col-6 vh-40" style="margin: auto; margin-top: 200px;">
+    <div class="col-6 vh-40" style="margin: auto;margin-top : 200px;">
       <div class="card shadow-sm p-4"> <!-- Add card with shadow and padding -->
-        <h3 class="text-center mb-4">Login</h3> <!-- Add margin-bottom to the heading -->
+        <h3 class="text-center mb-4">Register</h3> <!-- Add margin-bottom to the heading -->
         <h5 *ngIf="errorMsg" class="text-center text-danger">{{ errorMsg }}</h5> 
-        <form [formGroup]="loginForm" (ngSubmit)="login()">
+        <form [formGroup]="registerForm" (ngSubmit)="register()">
+            <!-- name Input -->
+          <div class="mb-3">
+            <label for="name" class="form-label">Name</label>
+            <input
+              id="name"
+              formControlName="name"
+              type="text"
+              class="form-control"
+              placeholder="Enter name"
+            />
+          </div>
+
           <!-- Email Input -->
           <div class="mb-3">
             <label for="email" class="form-label">Email</label>
@@ -28,8 +40,9 @@
           </div>
   
           <!-- Submit Button -->
-          <button type="submit" class="btn btn-primary w-100">Login</button> <!-- Full-width button -->
+          <button type="submit" class="btn btn-primary w-100">Register</button> <!-- Full-width button -->
         </form>
-        <a class="mt-4 text-center text-primary" routerLink="register" >Create an account</a>
+        <a class="mt-4 text-center text-primary" routerLink="">Login here</a>
+
       </div>
     </div>

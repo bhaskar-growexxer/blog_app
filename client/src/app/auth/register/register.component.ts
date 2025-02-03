@@ -5,31 +5,32 @@ import { Router, RouterModule } from '@angular/router';
 import { CommonModule } from '@angular/common';
 
 @Component({
-  selector: 'app-login',
+  selector: 'app-register',
   imports: [ReactiveFormsModule,CommonModule,RouterModule],
-  templateUrl: './login.component.html',
-  styleUrl: './login.component.css'
+  templateUrl: './register.component.html',
+  styleUrl: './register.component.css'
 })
-export class LoginComponent {
+export class RegisterComponent {
 
-  loginForm: FormGroup;
+  registerForm: FormGroup;
   errorMsg: string = '';
 
   constructor(private readonly authService: AuthServiceService,formBuilder: FormBuilder,private readonly router: Router) {
-    this.loginForm = formBuilder.group({
+    this.registerForm = formBuilder.group({
+      name: ['',[Validators.required,Validators.minLength(3)]],
       email: ['',[Validators.required,Validators.email]],
       password: ['',[Validators.required,Validators.minLength(3)]]
     });
   }
 
-  login() {
-    if(this.loginForm.invalid) {
+  register() {
+    if(this.registerForm.invalid) {
       return;
     }
-    const {email,password} = this.loginForm.value;
+    const {email,password,name} = this.registerForm.value;
 
 
-    this.authService.login(email,password).subscribe({
+    this.authService.register(name,email,password).subscribe({
       next: (response) => {
         if(response.isSuccess) {
           localStorage.setItem('user', JSON.stringify(response.user));
