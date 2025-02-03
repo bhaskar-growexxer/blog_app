@@ -61,7 +61,9 @@ class AuthController extends Controller
             ]);
 
             $token = $user->createToken('api-token')->plainTextToken;
-
+            $user = $user->toArray();
+            $user['created_at'] = explode('T', $user['created_at'])[0];
+            
             return response()->json([
                 'isSuccess' => true,
                 'user' => $user,
