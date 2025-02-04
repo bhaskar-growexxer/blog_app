@@ -12,7 +12,7 @@
         aria-expanded="false"
         aria-label="Toggle navigation"
       >
-        <i class="fas fa-bars"></i>
+        <em class="fas fa-bars"></em>
       </button>
   
       <!-- Collapsible wrapper -->
@@ -89,7 +89,7 @@
       <div class="card-header text-primary">
         {{ blog.category }}
         <span *ngIf="displaySelfBlogs" class="row w-auto">
-          <i class="bi bi-pencil-square w-10" (click)="openEditBlogModal(blog)" (keyup)="openEditBlogModal(blog)"></i>
+          <em class="bi bi-pencil-square w-10" (click)="openEditBlogModal(blog)" (keyup)="openEditBlogModal(blog)"></em>
         </span>
       </div>
       <div class="card-body flex-grow-1" style="overflow-y: auto;">
@@ -98,7 +98,7 @@
       </div>
       <div class="card-footer text-muted">
         Blog By {{ blog.author }} <span class="mx-2"> {{ blog.created_at }}
-          <i *ngIf="displaySelfBlogs" class="bi bi-trash text-danger mx-2 w-10" (click)="deleteBlog(blog.id)" (keyup)="deleteBlog(blog.id)"></i>
+          <em *ngIf="displaySelfBlogs" class="bi bi-trash text-danger mx-2 w-10" (click)="deleteBlog(blog.id)" (keyup)="deleteBlog(blog.id)"></em>
         </span>
       </div>
     </div>
