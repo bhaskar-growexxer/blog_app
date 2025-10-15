@@ -1,0 +1,14 @@
+<p class="status" *ngIf="messages.length > 0; else noMessages">
+  🔔 {{ messages.length }} new {{ messages.length === 1 ? 'notification' : 'notifications' }}
+</p>
+
+<ng-template #noMessages>
+  <p class="empty">No live notifications yet.</p>
+</ng-template>
+
+<ul class="notifications">
+  <li *ngFor="let msg of messages">
+    <span class="time">{{ msg.time | date: 'shortTime' }}</span>
+    <span class="text">{{ msg.text }}</span>
+  </li>
+</ul>
