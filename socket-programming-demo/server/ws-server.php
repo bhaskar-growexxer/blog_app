@@ -2,71 +2,102 @@
 $host = "0.0.0.0";
 $port = 9001;
 
-$server = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
-socket_set_option($server, SOL_SOCKET, SO_REUSEADDR, 1);
-socket_bind($server, $host, $port);
-socket_listen($server);
+$server = stream_socket_server("tcp://$host:$port", $errno, $errstr);
 
-$clients = [];
-
-echo "✅ WebSocket Server started at ws://localhost:$port\n";
-
-while (true) {
-    $changed = $clients;
-    $changed[] = $server;
-
-    socket_select($changed, $write, $except, 0);
-
-    // New client connection
-    if (in_array($server, $changed)) {
-
-        $client = socket_accept($server);
-        $clients[] = $client;
-
-        // WebSocket handshake
-        $header = socket_read($client, 1024);
-        handshake($header, $client);
-
-        echo "🔌 New client connected\n";
-
-        $key = array_search($server, $changed);
-        unset($changed[$key]);
-    }
-
-    // Handle client messages
-    foreach ($changed as $sock) {
-        $buffer = @socket_read($sock, 2048, PHP_BINARY_READ);
-
-        if (!$buffer) { // client disconnected
-            $key = array_search($sock, $clients);
-            unset($clients[$key]);
-            socket_close($sock);
-            echo "❌ Client disconnected\n";
-            continue;
-        }
-
-        $decoded = unmask($buffer);
-        echo "📩 Received: $decoded\n";
-
-        // Broadcast message to all clients
-        $response = mask($decoded);
-        foreach ($clients as $client) {
-            @socket_write($client, $response, strlen($response));
-        }
-    }
+if (!$server) {
+    die("Error: $errstr ($errno)\n");
 }
 
-// ------------------ FUNCTIONS ------------------
+echo "✅ WebSocket Server started on ws://$host:$port\n";
 
-function handshake($headers, $client)
-{
+/**
+ * Connected clients
+ * [
+ *     (int)$clientId => [
+ *         "socket" => resource,
+ *         "room"   => string,
+ *         "name"   => string
+ *     ]
+ * ]
+ */
+$clients = [];
+
+/**
+ * Encode WebSocket frame
+ */
+function ws_encode($message) {
+    $frame = chr(129); // 10000001 text frame
+    $length = strlen($message);
+
+    if ($length <= 125) {
+        $frame .= chr($length);
+    } elseif ($length <= 65535) {
+        $frame .= chr(126) . pack("n", $length);
+    } else {
+        $frame .= chr(127) . pack("J", $length);
+    }
+
+    return $frame . $message;
+}
+
+/**
+ * Unmask payload
+ */
+function ws_unmask($payload, $mask) {
+    $out = '';
+    $len = strlen($payload);
+    for ($i = 0; $i < $len; $i++) {
+        $out .= $payload[$i] ^ $mask[$i % 4];
+    }
+    return $out;
+}
+
+/**
+ * Decode WebSocket frame (clean version)
+ */
+function ws_decode($data) {
+    $bytes = unpack('C*', $data);
+    $firstByte  = $bytes[1];
+    $secondByte = $bytes[2];
+
+    $opcode = $firstByte & 0x0F;
+    $masked = ($secondByte >> 7) & 0x1;
+    $payloadLen = $secondByte & 0x7F;
+
+    $offset = 3;
+
+    if ($payloadLen === 126) {
+        $payloadLen = ($bytes[3] << 8) + $bytes[4];
+        $offset = 5;
+    } elseif ($payloadLen === 127) {
+        // Handle 64-bit (extremely rare)
+        $payloadLen =
+            ($bytes[3] << 56) + ($bytes[4] << 48) + ($bytes[5] << 40) +
+            ($bytes[6] << 32) + ($bytes[7] << 24) + ($bytes[8] << 16) +
+            ($bytes[9] << 8)  + $bytes[10];
+        $offset = 11;
+    }
+
+    if ($masked) {
+        $mask = substr($data, $offset - 1, 4);
+        $payload = substr($data, $offset + 3);
+        return ws_unmask($payload, $mask);
+    }
+
+    return substr($data, $offset - 1);
+}
+
+/**
+ * Perform WebSocket handshake
+ */
+function ws_handshake($client, $headers) {
     if (!preg_match("/Sec-WebSocket-Key: (.*)\r\n/", $headers, $matches)) {
-        return;
+        return false;
     }
 
     $key = trim($matches[1]);
 
-    $acceptKey = base64_encode(
+    $accept = base64_encode(
         sha1($key . "258EAFA5-E914-47DA-95CA-C5AB0DC85B11", true)
     );
 
@@ -74,46 +105,124 @@ function handshake($headers, $client)
         "HTTP/1.1 101 Switching Protocols\r\n" .
         "Upgrade: websocket\r\n" .
         "Connection: Upgrade\r\n" .
-        "Sec-WebSocket-Accept: $acceptKey\r\n\r\n";
+        "Sec-WebSocket-Accept: $accept\r\n\r\n";
 
-    socket_write($client, $upgrade, strlen($upgrade));
+    fwrite($client, $upgrade);
+    return true;
 }
 
-function unmask($payload)
-{
-    $length = ord($payload[1]) & 127;
-
-    if ($length == 126) {
-        $mask = substr($payload, 4, 4);
-        $data = substr($payload, 8);
-    } else if ($length == 127) {
-        $mask = substr($payload, 10, 4);
-        $data = substr($payload, 14);
-    } else {
-        $mask = substr($payload, 2, 4);
-        $data = substr($payload, 6);
+/**
+ * Broadcast message to a room
+ */
+function send_to_room($clients, $roomId, $msg) {
+    foreach ($clients as $id => $c) {
+        if ($c["room"] === $roomId) {
+            @fwrite($c["socket"], ws_encode($msg));
+        }
     }
-
-    $text = "";
-    for ($i = 0; $i < strlen($data); $i++) {
-        $text .= $data[$i] ^ $mask[$i % 4];
-    }
-
-    return $text;
 }
 
-function mask($text)
-{
-    $b1 = 0x81; // text frame
-    $length = strlen($text);
-
-    if ($length <= 125) {
-        $header = pack('CC', $b1, $length);
-    } else if ($length <= 65535) {
-        $header = pack('CCn', $b1, 126, $length);
-    } else {
-        $header = pack('CCNN', $b1, 127, 0, $length);
+/**
+ * MAIN LOOP
+ */
+while (true) {
+    $readSockets = [$server];
+    foreach ($clients as $c) {
+        $readSockets[] = $c["socket"];
     }
 
-    return $header . $text;
+    stream_select($readSockets, $write, $except, 0);
+
+    foreach ($readSockets as $socket) {
+
+        // NEW CLIENT
+        if ($socket === $server) {
+            $newSocket = stream_socket_accept($server);
+            $id = intval($newSocket);
+            $clients[$id] = [
+                "socket" => $newSocket,
+                "room"   => null,
+                "name"   => null
+            ];
+            continue;
+        }
+
+        $id = intval($socket);
+        $data = @fread($socket, 2048);
+
+        if (!$data) {
+            echo "❌ Client disconnected: $id\n";
+            unset($clients[$id]);
+            continue;
+        }
+
+        // HANDSHAKE
+        if (!isset($clients[$id]["handshake"])) {
+            ws_handshake($socket, $data);
+            $clients[$id]["handshake"] = true;
+            continue;
+        }
+
+        // DECODE PAYLOAD
+        $msg = ws_decode($data);
+        $json = json_decode($msg, true);
+
+        if (!$json) continue;
+
+        // When user joins room
+        if ($json["type"] === "join") {
+
+            $room = $json["room"] ?? null;
+            $name = $json["name"] ?? "Unknown";
+
+            if (!$room) {
+                echo "❌ Join event with missing room\n";
+                continue;
+            }
+
+            $clients[$id]["room"] = $room;
+            $clients[$id]["name"] = $name;
+
+            echo "✅ $name joined room $room\n";
+
+            send_to_room($clients, $room, json_encode([
+                "type" => "system",
+                "msg"  => "$name joined room $room"
+            ]));
+
+            continue;
+        }
+
+        // Chat message
+        // Chat message
+        if ($json["type"] === "message") {
+
+            // Avoid undefined room notice
+            if (!isset($clients[$id]["room"])) {
+                echo "❌ Message received before joining room\n";
+                continue;
+            }
+
+            $room = $clients[$id]["room"];
+            $name = $clients[$id]["name"] ?? "Unknown";
+
+            // Avoid undefined msg notice
+            $messageText = $json["msg"] ?? "";
+
+            if ($messageText === "") {
+                echo "❌ Empty message received\n";
+                continue;
+            }
+
+            send_to_room($clients, $room, json_encode([
+                "type" => "message",
+                "name" => $name,
+                "msg"  => $messageText
+            ]));
+
+            continue;
+        }
+
+    }
 }
+?>
