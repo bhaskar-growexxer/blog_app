@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Http\Controllers;
 
 use App\Models\User;
@@ -7,9 +8,11 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 
-class AuthController extends Controller
+class AuthMongoController extends Controller
 {
-    //hanles login functionality
+    /**
+     * Handles login functionality.
+     */
     public function login(Request $request)
     {
         try{
@@ -20,17 +23,17 @@ class AuthController extends Controller
 
             $credentials = $request->only('email', 'password');
 
-            if (Auth::attempt($credentials)) {
-                $user = Auth::user();
-                $token = $user->createToken('api-token')->plainTextToken;
-
-                $user = $user->toArray();
-                $user['created_at'] = explode('T', $user['created_at'])[0];
-
-                return response()->json(['isSuccess' => true,'user' => $user, 'token' => $token]);
+            if (!Auth::attempt($credentials)) {
+                return response()->json(['isSuccess' => false, 'message' => 'Invalid Credentials'], 401);
             }
 
-            return response()->json(['isSuccess' => false,'message' => 'Invalid Credentials'], 401);
+            $user = Auth::user();
+            $token = $user->createToken('api-token')->plainTextToken;
+
+            $user = $user->toArray();
+            $user['created_at'] = explode('T', $user['created_at'])[0];
+
+            return response()->json(['isSuccess' => true, 'user' => $user, 'token' => $token], 200);
 
         }catch (ValidationException $e) {
             return response()->json([
@@ -41,14 +44,15 @@ class AuthController extends Controller
         }
     }
 
-
-    //handles register functionality
+    /**
+     * Handles register functionality.
+     */
     public function register(Request $request)
     {
         try{
             $request->validate([
                 'name' => 'required|string|max:255',
-                'email' => 'required|string|email|max:255|unique:users',
+                'email' => 'required|string|email|max:255|unique:users,email',
                 'password' => 'required|string|min:4',
             ]);
 
@@ -61,9 +65,10 @@ class AuthController extends Controller
             ]);
 
             $token = $user->createToken('api-token')->plainTextToken;
+
             $user = $user->toArray();
             $user['created_at'] = explode('T', $user['created_at'])[0];
-            
+
             return response()->json([
                 'isSuccess' => true,
                 'user' => $user,
@@ -79,14 +84,16 @@ class AuthController extends Controller
         }
     }
 
-    //handles logout functionality
+    /**
+     * Handles logout functionality.
+     */
     public function logout(Request $request)
     {
-        if ($request->user()) {
-            $request->user()->tokens()->delete();
-            return response()->json(['isSuccess' => true, 'message' => 'Logged out successfully']);
+        if (!$request->user()) {
+            return response()->json(['isSuccess' => false, 'message' => 'User not authenticated'], 401);
         }
-        return response()->json(['isSuccess' => false, 'message' => 'User not authenticated'], 401);
-    }
 
+        $request->user()->tokens()->delete();
+        return response()->json(['isSuccess' => true, 'message' => 'Logged out successfully'], 200);
+    }
 }

@@ -14,40 +14,32 @@ class BlogController extends Controller
     const TIMEZONE = 'Asia/Kolkata';
 
     /**
-     * Display a listing of the resource.
+     * List blogs with category or search filter
      */
     public function index(Request $request)
     {
         if ($request['category']) {
             $blogs = Blog::where('category', $request['category'])->get();
+            return $this->formatResponse($blogs);
         }
-        elseif ($request['search']) {
+
+        if ($request['search']) {
             $blogs = Blog::where('title', 'like', '%' . $request['search'] . '%')
                         ->orWhere('description', 'like', '%' . $request['search'] . '%')
                         ->orWhere('author', 'like', '%' . $request['search'] . '%')
                         ->get();
-        }
-        else{
-            $blogs = Blog::all();
+            return $this->formatResponse($blogs);
         }
 
-        $blogs = array_map(function($blog){
-
-            $dateTime = new DateTime($blog['created_at']);
-            $blog['created_at'] = $dateTime->setTimezone(new DateTimeZone(self::TIMEZONE))->format('H:i d M Y');
-            return $blog;
-        }, $blogs->toArray());
-
-        return response()->json(['isSuccess' => true, 'data' => $blogs ?? []],200);
-
+        return $this->formatResponse(Blog::all());
     }
 
     /**
-     * Store a newly created resource in storage.
+     * Store a new blog (MongoDB)
      */
     public function store(Request $request)
     {
-        try{
+        try {
             $request->validate([
                 'title' => 'required',
                 'author' => 'required',
@@ -60,15 +52,15 @@ class BlogController extends Controller
                 'author' => $request->author,
                 'category' => $request->category,
                 'description' => $request->description,
+                'created_at' => now()->toDateTimeString(), // Mongo stores string/UTC
             ]);
 
-            $blog = $blog->toArray();
-            $dateTime = new DateTime($blog['created_at']);
-            $blog['created_at'] = $dateTime->setTimezone(new DateTimeZone(self::TIMEZONE))->format('H:i d M Y');
+            return response()->json([
+                'isSuccess' => true,
+                'data' => $this->formatOne($blog->toArray())
+            ], 200);
 
-            return response()->json(['isSuccess' => true, 'data' => $blog],200);
-
-        }catch (ValidationException $e) {
+        } catch (ValidationException $e) {
             return response()->json([
                 'isSuccess' => false,
                 'message' => 'Validation failed',
@@ -78,53 +70,135 @@ class BlogController extends Controller
     }
 
     /**
-     * Display the specified resource.
+     * Show a single blog by ObjectId
      */
-    public function show(String $id)
+    public function show(string $id)
     {
-        if(!empty($id)){
-            return response()->json(['isSuccess' => true, 'data' => Blog::find($id)],200);
+        if (empty($id)) {
+            return response()->json(['isSuccess' => false, 'message' => self::ID_REQUIRED_MESSAGE], 422);
         }
-        return response()->json(['isSuccess' => false, 'mesage' => self::ID_REQUIRED_MESSAGE], 422);
+
+        $blog = Blog::find($id);
+
+        return response()->json([
+            'isSuccess' => true,
+            'data' => $blog ? $this->formatOne($blog->toArray()) : null
+        ], 200);
     }
 
     /**
-     * Update the specified resource in storage.
+     * Update a blog (owner only)
      */
-    public function update(String $id,Request $request)
+    public function update(string $id, Request $request)
     {
-        if(!empty($id)){
-            $blog = Blog::find($request['id']);
-
-            if($blog->exists() && $blog->author == $request->user()->email){
-                $blog->update([
-                    'title' => $request->title ?? $blog->title,
-                    'category' => $request->category ?? $blog->category,
-                    'description' => $request->description ?? $blog->description,
-                ]);
-                return response()->json(['isSuccess' => true, 'data' =>$blog], 200);
-            }
-            
-            return response()->json(['isSuccess' => false, 'message' => 'You are not authorized to delete this blog'], 401);
-
+        if (empty($id)) {
+            return response()->json(['isSuccess' => false, 'message' => self::ID_REQUIRED_MESSAGE], 422);
         }
-        return response()->json(['isSuccess' => false, 'message' => self::ID_REQUIRED_MESSAGE], 422);
+
+        $blog = Blog::find($id);
+
+        if (!$blog || !$blog->exists()) {
+            return response()->json(['isSuccess' => false, 'message' => 'Blog not found'], 404);
+        }
+
+        if ($blog->author !== $request->user()->email) {
+            return response()->json(['isSuccess' => false, 'message' => 'You are not authorized to update this blog'], 401);
+        }
+
+        $blog->update([
+            'title'       => $request->title ?? $blog->title,
+            'category'    => $request->category ?? $blog->category,
+            'description' => $request->description ?? $blog->description,
+        ]);
+
+        return response()->json([
+            'isSuccess' => true,
+            'data' => $this->formatOne($blog->toArray())
+        ], 200);
     }
 
     /**
-     * Remove the specified resource from storage.
+     * Delete a blog (owner only)
      */
-    public function destroy(String $id,Request $request)
+    public function destroy(string $id, Request $request)
     {
-        if(!empty($id)){
-            $blog = Blog::find($id);
-            if($blog->exists() && $blog->author == $request->user()->email){
-                $blog->delete();
-                return response()->json(['isSuccess' => true, 'message' => 'blog deleted'], 200);
-            }
-            return response()->json(['isSuccess' => false, 'message' => 'You are not authorized to delete this blog'], 401);
-
+        if (empty($id)) {
+            return response()->json(['isSuccess' => false, 'message' => self::ID_REQUIRED_MESSAGE], 422);
         }
-        return response()->json(['isSuccess' => false, 'message' => self::ID_REQUIRED_MESSAGE], 422);
+
+        $blog = Blog::find($id);
+
+        if (!$blog || !$blog->exists()) {
+            return response()->json(['isSuccess' => false, 'message' => 'Blog not found'], 404);
+        }
+
+        if ($blog->author !== $request->user()->email) {
+            return response()->json(['isSuccess' => false, 'message' => 'You are not authorized to delete this blog'], 401);
+        }
+
+        $blog->delete();
+
+        return response()->json(['isSuccess' => true, 'message' => 'Blog deleted'], 200);
     }
+
+    /* ------------------ Helper Functions ------------------ */
+
+    /**
+     * Format date for list results
+     */
+    private function formatResponse($blogs)
+    {
+        $formatted = array_map(function ($blog) {
+            return $this->formatOne($blog);
+        }, $blogs->toArray());
+
+        return response()->json(['isSuccess' => true, 'data' => $formatted], 200);
+    }
+
+    /**
+     * Format single blog record
+     */
+    private function formatOne($blog)
+    {
+        if (!empty($blog['created_at'])) {
+            $dateTime = new DateTime($blog['created_at']);
+            $blog['created_at'] = $dateTime
+                ->setTimezone(new DateTimeZone(self::TIMEZONE))
+                ->format('H:i d M Y');
+        }
+
+        // Convert `_id` (ObjectId) to string for frontend
+        if (isset($blog['_id']) && is_object($blog['_id'])) {
+            $blog['_id'] = (string) $blog['_id'];
+        }
+
+        return $blog;
+    }
+
+    /**
+     * Aggregate: Count blogs grouped by category
+     */
+    public function getBlogsByCategoryCount()
+    {
+        $result = Blog::raw(function ($collection) {
+            return $collection->aggregate([
+                ['$group' => [
+                    '_id' => '$category',
+                    'total' => ['$sum' => 1],
+                ]],
+                ['$sort' => ['total' => -1]]
+            ]);
+        });
+
+        // Convert cursor to array
+        $data = array_map(function ($item) {
+            return [
+                'category' => $item['_id'],
+                'total' => $item['total'],
+            ];
+        }, iterator_to_array($result));
+
+        return response()->json(['isSuccess' => true, 'data' => $data], 200);
+    }
+
 }
