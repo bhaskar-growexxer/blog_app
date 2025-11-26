@@ -94,15 +94,10 @@ return [
         ],
 
         'mongodb' => [
-            'driver'   => 'mongodb',
-            'dsn'      => env('MONGO_DB_CONNECTION_URI'),
-            'database' => env('MONGO_DB_DATABASE'),
-            'options'  => [
-                'database' => env('MONGO_AUTHDB', 'admin'),
-                'ssl'      => env('MONGO_SSL', false),
-            ],
+            'driver' => 'mongodb',
+            'dsn' => env('MONGO_URI'),
+            'database' => env('DB_DATABASE', 'my_database'),
         ],
-
     ],
 
     /*
