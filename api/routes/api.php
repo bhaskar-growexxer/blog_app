@@ -37,3 +37,7 @@ Route::group(['middleware' => AUTH_SANCTUM, 'prefix' => 'blogs', 'controller' =>
     Route::put($blogId, 'update');
     Route::delete($blogId, 'destroy');
 });
+
+Route::group(['prefix' => 'redis_search', 'controller' => BlogController::class], function () {
+    Route::get('/', 'index');
+});

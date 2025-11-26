@@ -7,39 +7,116 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use DateTime;
 use DateTimeZone;
+use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Facades\Cache;
 
 class BlogController extends Controller
 {
     const ID_REQUIRED_MESSAGE = "ID is required";
     const TIMEZONE = 'Asia/Kolkata';
+    const CACHE_TTL = 600; // 10 minutes in seconds
+    const CACHE_DRIVER = 'file';
 
     /**
-     * Display a listing of the resource.
+     * Fetch blogs with Cache caching (direct Cache usage)
+     *
+     * @param Request $request
+     * @return array
      */
-    public function index(Request $request)
+    private function getCachedBlogs(Request $request): array
     {
-        if ($request['category']) {
-            $blogs = Blog::where('category', $request['category'])->get();
+        // Preparing fiter params fr cache key
+        $searchParams = [];
+        if ($request->category) {
+            $searchParams['category'] = $request->category;
         }
-        elseif ($request['search']) {
-            $blogs = Blog::where('title', 'like', '%' . $request['search'] . '%')
-                        ->orWhere('description', 'like', '%' . $request['search'] . '%')
-                        ->orWhere('author', 'like', '%' . $request['search'] . '%')
+        if ($request->search) {
+            $searchParams['search'] = $request->search;
+        }
+
+        // Generate key based on params
+        $cacheKey = 'blogs_' . md5(json_encode($searchParams));
+
+        // Check cache
+        if (self::CACHE_DRIVER === 'redis') {
+            // Fetch from Redis Cache
+            $cached = Redis::get($cacheKey);
+        } else {
+            // Fetch from File Cache
+            $cached = Cache::get($cacheKey);
+        }
+
+        if ($cached) {
+            return [
+                'blogs' => json_decode($cached, true),
+                'isCached' => true,
+                'cacheKey' => $cacheKey,
+                'source' => 'cache',
+                'ttl' => self::CACHE_TTL,
+                'driver' => self::CACHE_DRIVER
+            ];
+        }
+
+        // Fetch from DB
+        if ($request->category) {
+            $blogs = Blog::where('category', $request->category)->get();
+        }
+        elseif ($request->search) {
+            $blogs = Blog::where('title', 'like', '%' . $request->search . '%')
+                        ->orWhere('description', 'like', '%' . $request->search . '%')
+                        ->orWhere('author', 'like', '%' . $request->search . '%')
                         ->get();
         }
-        else{
+        else {
             $blogs = Blog::all();
         }
 
-        $blogs = array_map(function($blog){
-
+        // Format
+        $blogsArray = array_map(function ($blog) {
             $dateTime = new DateTime($blog['created_at']);
-            $blog['created_at'] = $dateTime->setTimezone(new DateTimeZone(self::TIMEZONE))->format('H:i d M Y');
+            $blog['created_at'] = $dateTime
+                ->setTimezone(new DateTimeZone(self::TIMEZONE))
+                ->format('H:i d M Y');
             return $blog;
         }, $blogs->toArray());
 
-        return response()->json(['isSuccess' => true, 'data' => $blogs ?? []],200);
+        if (self::CACHE_DRIVER === 'redis') {
+            // Save to Redis Cache with TTL 10 minutes (600 seconds)
+            Redis::setex($cacheKey, self::CACHE_TTL, json_encode($blogsArray));
+        } else {
+            // Save to File Cache with TTL 10 minutes (600 seconds)
+            Cache::put($cacheKey, json_encode($blogsArray), self::CACHE_TTL);
+        }
+    
+        return [
+            'blogs' => $blogsArray,
+            'isCached' => false,
+            'cacheKey' => $cacheKey,
+            'source' => 'database',
+            'ttl' => self::CACHE_TTL,
+            'driver' => self::CACHE_DRIVER
+        ];
+    }
 
+    /**
+     * Display a listing of the resource using Cache cache.
+     */
+    public function index(Request $request)
+    {
+        try {
+            $blogs = $this->getCachedBlogs($request);
+
+            return response()->json([
+                'isSuccess' => true,
+                'data' => $blogs
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'isSuccess' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
