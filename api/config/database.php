@@ -97,6 +97,11 @@ return [
             'driver' => 'mongodb',
             'dsn' => env('MONGO_URI'),
             'database' => env('DB_DATABASE', 'my_database'),
+            'options' => [
+                'tls' => true,
+                'tlsAllowInvalidCertificates' => false,
+                'serverSelectionTimeoutMS' => 5000,
+            ],
         ],
     ],
 
