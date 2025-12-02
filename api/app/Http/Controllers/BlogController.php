@@ -9,6 +9,7 @@ use DateTime;
 use DateTimeZone;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Cache;
+use App\Services\SyncService;
 
 class BlogController extends Controller
 {
@@ -126,7 +127,7 @@ class BlogController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
+    public function store(Request $request, SyncService $syncService)
     {
         try{
             $request->validate([
@@ -146,6 +147,9 @@ class BlogController extends Controller
             $blog = $blog->toArray();
             $dateTime = new DateTime($blog['created_at']);
             $blog['created_at'] = $dateTime->setTimezone(new DateTimeZone(self::TIMEZONE))->format('H:i d M Y');
+
+            // Sync to external API
+            $syncService->syncBlog($blog->toArray());
 
             return response()->json(['isSuccess' => true, 'data' => $blog],200);
 
