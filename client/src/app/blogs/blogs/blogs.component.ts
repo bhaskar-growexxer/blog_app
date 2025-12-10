@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component,inject,OnInit } from '@angular/core';
 import { BlogServiceService } from '../../../services/blog-service.service';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
@@ -7,141 +7,134 @@ import { NewBlogComponent } from '../new-blog/new-blog.component';
 import { MatDialog } from '@angular/material/dialog'; 
 import { AuthServiceService } from '../../../services/auth-service.service';
 import { EditBlogComponent } from '../edit-blog/edit-blog.component';
-
+import {Blog} from '../../models/blog.model';
+import {BlogCategory} from '../../models/blog.model';
+import {User} from '../../models/user.model';
+import { signal, computed } from '@angular/core';
 @Component({
   selector: 'app-blogs',
   standalone: true,
-  imports : [FormsModule,CommonModule,RouterModule],
+  imports: [CommonModule, FormsModule, RouterModule],
   templateUrl: './blogs.component.html',
   styleUrl: './blogs.component.css'
 })
-export class BlogsComponent {
+export class BlogsComponent implements OnInit {
 
-  blogs: any[] = []; // Original list of blogs
-  filteredBlogs: any[] = []; // Filtered list of blogs
-  searchQuery: string = ''; // Search input
-  selectedCategory: string = ''; // Selected category for filtering
-  blogCategories: string[] = []; // blog categories
-  displaySelfBlogs: boolean = false; // Display only self blogs
-  user : any = {};
+  // -------------------------------
+  // Dependencies (modern inject)
+  // -------------------------------
+  private readonly blogService = inject(BlogServiceService);
+  private readonly authService = inject(AuthServiceService);
+  private readonly dialog = inject(MatDialog);
+  private readonly router = inject(Router);
 
-  constructor(private readonly blogService: BlogServiceService,private readonly dialog: MatDialog,private readonly authService: AuthServiceService,private readonly router: Router) {
-  }
+  // -------------------------------
+  // State (Signals)
+  // -------------------------------
 
-  ngOnInit() {
-    // Fetch all blogs when the component initializes
-    this.user = this.authService.getCurrentUser();
+  readonly blogs = signal<Blog[]>([]);
+  readonly searchQuery = signal('');
+  readonly selectedCategory = signal<BlogCategory | ''>('');
+  readonly displaySelfBlogs = signal(false);
+
+  readonly user = signal<User | null>(null);
+
+  readonly blogCategories = this.blogService.blogCategories;
+
+  // -------------------------------
+  // Derived state
+  // -------------------------------
+
+  readonly filteredBlogs = computed(() => {
+    const query = this.searchQuery().toLowerCase();
+    const category = this.selectedCategory();
+    const onlyMine = this.displaySelfBlogs();
+    const email = this.user()?.email;
+
+    return this.blogs().filter(blog => {
+      const matchesSearch =
+        blog.title.toLowerCase().includes(query) ||
+        blog.description.toLowerCase().includes(query) ||
+        blog.author.toLowerCase().includes(query);
+
+      const matchesCategory = category ? blog.category === category : true;
+      const matchesOwner = onlyMine ? blog.author === email : true;
+
+      return matchesSearch && matchesCategory && matchesOwner;
+    });
+  });
+
+  // -------------------------------
+  // Lifecycle
+  // -------------------------------
+
+  ngOnInit(): void {
+    this.user.set(this.authService.getCurrentUser());
     this.fetchBlogs();
-    this.blogCategories = this.blogService.blogCategories;
   }
 
-  // Fetch all blogs from the BlogService
-  fetchBlogs() {
+  // -------------------------------
+  // Data
+  // -------------------------------
+
+  private fetchBlogs(): void {
     this.blogService.getBlogs().subscribe({
-      next: (response) => {
-        console.log('Fetched blogs', response);
-        this.blogs = response.data.reverse(); // Saving the original list
-        this.filteredBlogs = [...this.blogs];
-      },
-      error: (error) => {
-        console.error('Failed to fetch blogs', error);
-      }
+      next: (res) => this.blogs.set([...res.data].reverse()),
+      error: (err) => console.error('Failed to fetch blogs', err)
     });
   }
 
-  filterBlogs() {
-    this.filteredBlogs = this.blogs.filter((blog) => {
-      let matchesSearch = blog.title.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-                          blog.author.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-                          blog.description.toLowerCase().includes(this.searchQuery.toLowerCase());
-      if (this.displaySelfBlogs) {
-        matchesSearch = matchesSearch && blog.author === this.user.email;
-      }
-      const matchesCategory = this.selectedCategory ? blog.category === this.selectedCategory : true;
-      return matchesSearch && matchesCategory;
-    });
+  // -------------------------------
+  // UI Actions
+  // -------------------------------
+
+  resetFilters(): void {
+    this.searchQuery.set('');
+    this.selectedCategory.set('');
+    this.displaySelfBlogs.set(false);
   }
 
-  resetFilters() {
-    this.searchQuery = '';
-    this.selectedCategory = '';
-    this.filteredBlogs = [...this.blogs];
+  openNewBlogModal(): void {
+    this.dialog
+      .open(NewBlogComponent, { width: '500px', height: '500px' })
+      .afterClosed()
+      .subscribe((blog: Blog | null) => {
+        if (!blog) return;
+        this.blogs.update(b => [blog, ...b]);
+      });
   }
 
-  openNewBlogModal() {
-    const dialogRef =this.dialog.open(NewBlogComponent,{width:'500px',height:'500px'});
-
-    dialogRef.afterClosed().subscribe(blog => {
-      if (blog) {
-
-        this.blogs.unshift(blog);
-
-        let matchesSearch = blog.title.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-                            blog.author.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-                            blog.description.toLowerCase().includes(this.searchQuery.toLowerCase());
-        if (this.displaySelfBlogs) {
-          matchesSearch = matchesSearch && blog.author === this.user.email;
-        }
-
-        if(matchesSearch && (!this.selectedCategory || blog.category === this.selectedCategory)){
-          this.filteredBlogs.unshift(blog);
-        }
-
-        console.log('New blog added:', blog);
-      }
-    });
+  openEditBlogModal(blog: Blog): void {
+    this.dialog
+      .open(EditBlogComponent, {
+        width: '500px',
+        height: '500px',
+        data: blog
+      })
+      .afterClosed()
+      .subscribe((updated: Blog | null) => {
+        if (!updated) return;
+        this.blogs.update(list =>
+          list.map(b => (b.id === updated.id ? updated : b))
+        );
+      });
   }
 
-  openEditBlogModal(blog: any) {
-    const dialogRef =this.dialog.open(EditBlogComponent,{width:'500px',height:'500px',data: blog});
-
-    dialogRef.afterClosed().subscribe(blog => {
-      if (blog) {
-
-        this.blogs = this.blogs.map( b => b.id === blog.id ? blog : b);
-
-        let matchesSearch = blog.title.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-                            blog.author.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-                            blog.description.toLowerCase().includes(this.searchQuery.toLowerCase());
-        if (this.displaySelfBlogs) {
-          matchesSearch = matchesSearch && blog.author === this.user.email;
-        }
-
-        if(matchesSearch && (!this.selectedCategory || blog.category === this.selectedCategory)){
-          this.filteredBlogs = this.filteredBlogs.map( b => b.id === blog.id ? blog : b);
-        }
-
-        console.log('New blog added:', blog);
-      }
-    });
-  }
-
-  deleteBlog(id: number) {
+  deleteBlog(id: Blog['id']): void {
     this.blogService.deleteBlog(id).subscribe({
-      next : (respoinse) => {
-        console.log('Blog deleted:', respoinse);
-        if(respoinse.isSuccess) {
-          this.blogs = this.blogs.filter((blog) => blog.id !== id);
-          this.filteredBlogs = this.filteredBlogs.filter((blog) => blog.id !== id);
-        }
+      next: () => {
+        this.blogs.update(list => list.filter(b => b.id !== id));
       },
-      error : (error) => {
-        console.error('Error deleting blog:', error);
-      }
+      error: err => console.error('Delete failed', err)
     });
   }
 
-  displaySelf() {
+  showMyBlogs(): void {
     this.resetFilters();
-    this.displaySelfBlogs = true;
-    this.filteredBlogs = this.filteredBlogs.filter((blog) => {
-      return blog.author == this.user.email;
-    }); 
-    this.user.totalBlogs = this.filteredBlogs.length;
+    this.displaySelfBlogs.set(true);
   }
 
-  logout() {
-    this.authService.logout();
+  logout(): void {
+    this.authService.logout().subscribe();
   }
-
 }

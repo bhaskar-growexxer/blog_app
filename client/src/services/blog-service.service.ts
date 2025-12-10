@@ -1,5 +1,51 @@
+/** Generic API response wrapper */
+export interface ApiResponse<T> {
+  success: boolean;
+  message?: string;
+  data: T;
+}
+
+/** Blog category type (string literal union) */
+export type BlogCategory =
+  | 'Technology'
+  | 'Health'
+  | 'Science'
+  | 'Business'
+  | 'Entertainment'
+  | 'Sports'
+  | 'Education'
+  | 'Lifestyle'
+  | 'Politics'
+  | 'Travel';
+
+/** Blog domain model */
+export interface Blog {
+  id: number;
+  title: string;
+  description: string;
+  category: BlogCategory;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+/** Create blog request DTO */
+export interface CreateBlogRequest {
+  title: string;
+  description: string;
+  category: BlogCategory;
+}
+
+/** Update blog request DTO */
+export interface UpdateBlogRequest extends CreateBlogRequest {
+  id: number;
+}
+
+// ===============================
+// Blog Service (Modern TypeScript)
+// ===============================
+
 import { HttpClient } from '@angular/common/http';
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../environments/environment';
 
@@ -8,34 +54,58 @@ import { environment } from '../environments/environment';
 })
 export class BlogServiceService {
 
-  private readonly apiUrl = `${environment.api_url}/blogs`;
+  // Modern Dependency Injection (Angular 14+)
+  private readonly http = inject(HttpClient);
 
-  public readonly blogCategories : string[] = ['Technology', 'Health', 'Science', 'Business', 'Entertainment', 'Sports', 'Education', 'Lifestyle', 'Politics', 'Travel'];
+  private readonly apiUrl = `${environment.api_url}/blogs` as const;
 
-  constructor(private readonly http: HttpClient) {}
+  // Typed & immutable categories
+  public readonly blogCategories: readonly BlogCategory[] = [
+    'Technology',
+    'Health',
+    'Science',
+    'Business',
+    'Entertainment',
+    'Sports',
+    'Education',
+    'Lifestyle',
+    'Politics',
+    'Travel'
+  ] as const;
 
+  // -------------------------------
   // Get all blogs
-  getBlogs(): Observable<any> {
-    return this.http.get(`${this.apiUrl}`);
+  // -------------------------------
+  getBlogs(): Observable<ApiResponse<Blog[]>> {
+    return this.http.get<ApiResponse<Blog[]>>(this.apiUrl);
   }
 
-  // Get a single blog by ID
-  getBlogById(id: number): Observable<any> {
-    return this.http.get(`${this.apiUrl}/${id}`);
+  // -------------------------------
+  // Get blog by ID
+  // -------------------------------
+  getBlogById(id: Blog['id']): Observable<ApiResponse<Blog>> {
+    return this.http.get<ApiResponse<Blog>>(`${this.apiUrl}/${id}`);
   }
 
-  // Create a new blog
-  createBlog(blogData: { title: string; description: string }): Observable<any> {
-    return this.http.post(`${this.apiUrl}`, blogData);
+  // -------------------------------
+  // Create blog
+  // -------------------------------
+  createBlog(payload: CreateBlogRequest): Observable<ApiResponse<Blog>> {
+    return this.http.post<ApiResponse<Blog>>(this.apiUrl, payload);
   }
 
-  // Update a blog by ID
-  updateBlog(blogData: { id: number; title: string; description: string }): Observable<any> {
-    return this.http.put(`${this.apiUrl}/${blogData.id}`, blogData);
+  // -------------------------------
+  // Update blog
+  // -------------------------------
+  updateBlog(payload: UpdateBlogRequest): Observable<ApiResponse<Blog>> {
+    const { id, ...body } = payload;
+    return this.http.put<ApiResponse<Blog>>(`${this.apiUrl}/${id}`, body);
   }
 
-  // Delete a blog by ID
-  deleteBlog(id: number): Observable<any> {
-    return this.http.delete(`${this.apiUrl}/${id}`);
+  // -------------------------------
+  // Delete blog
+  // -------------------------------
+  deleteBlog(id: Blog['id']): Observable<ApiResponse<null>> {
+    return this.http.delete<ApiResponse<null>>(`${this.apiUrl}/${id}`);
   }
 }
