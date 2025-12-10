@@ -38,6 +38,12 @@ Route::group(['middleware' => AUTH_SANCTUM, 'prefix' => 'blogs', 'controller' =>
     Route::delete($blogId, 'destroy');
 });
 
-Route::group(['prefix' => 'blogs_test', 'controller' => BlogController::class], function () {
+Route::group(['prefix' => 'mongo', 'controller' => BlogController::class], function () {
     Route::get('/', 'index');
+    Route::post('/', 'store');
+
+    $blogId = '/{id}';
+    Route::get($blogId, 'show');
+    Route::put($blogId, 'update');
+    Route::delete($blogId, 'destroy');
 });
