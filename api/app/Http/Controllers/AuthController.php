@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
+use App\Events\UserLoggedIn;
 
 class AuthController extends Controller
 {
@@ -23,6 +24,9 @@ class AuthController extends Controller
             if (Auth::attempt($credentials)) {
                 $user = Auth::user();
                 $token = $user->createToken('api-token')->plainTextToken;
+
+                // Dispatch login event (sends notification via listener)
+                UserLoggedIn::dispatch($user, $request->ip());
 
                 $user = $user->toArray();
                 $user['created_at'] = explode('T', $user['created_at'])[0];

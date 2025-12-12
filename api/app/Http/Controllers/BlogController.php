@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use DateTime;
 use DateTimeZone;
+use App\Events\BlogCreated;
 
 class BlogController extends Controller
 {
@@ -61,6 +62,9 @@ class BlogController extends Controller
                 'category' => $request->category,
                 'description' => $request->description,
             ]);
+
+            // Dispatch the event
+            BlogCreated::dispatch($blog);
 
             $blog = $blog->toArray();
             $dateTime = new DateTime($blog['created_at']);
