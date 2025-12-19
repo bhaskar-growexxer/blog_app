@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, of, combineLatest } from 'rxjs';
+import { debounceTime, distinctUntilChanged, switchMap, map, shareReplay, startWith } from 'rxjs/operators';
 import { environment } from '../environments/environment';
 
 @Injectable({
@@ -14,9 +15,32 @@ export class BlogServiceService {
 
   constructor(private readonly http: HttpClient) {}
 
-  // Get all blogs
-  getBlogs(): Observable<any> {
-    return this.http.get(`${this.apiUrl}`);
+  // Get all blogs or with optional filters (search, category).
+  // Uses debounce + distinctUntilChanged + switchMap internally.
+  getBlogs(filters?: { search?: string; category?: string }): Observable<any> {
+    return of(filters ?? {}).pipe(
+      debounceTime(200),
+      distinctUntilChanged((a, b) => (a?.search ?? '') === (b?.search ?? '') && (a?.category ?? '') === (b?.category ?? '')),
+      switchMap(f => {
+        const params: any = {};
+        if (f?.search) params.search = f.search;
+        if (f?.category) params.category = f.category;
+        return this.http.get(`${this.apiUrl}`, { params });
+      }),
+      // keep behaviour stable for multiple subscribers
+      shareReplay({ bufferSize: 1, refCount: true })
+    );
+  }
+
+  // Convenience: take streams for search/category/refresh and return combined stream of server results.
+  watchBlogs(search$: Observable<string>, category$: Observable<string>, refresh$: Observable<void>): Observable<any> {
+    return combineLatest([
+      refresh$.pipe(startWith<void, void>(undefined)),
+      search$.pipe(startWith(''), debounceTime(300), distinctUntilChanged()),
+      category$.pipe(startWith(''))
+    ]).pipe(
+      switchMap(([_, search, category]) => this.getBlogs({ search, category }))
+    );
   }
 
   // Get a single blog by ID

@@ -7,6 +7,8 @@ import { NewBlogComponent } from '../new-blog/new-blog.component';
 import { MatDialog } from '@angular/material/dialog'; 
 import { AuthServiceService } from '../../../services/auth-service.service';
 import { EditBlogComponent } from '../edit-blog/edit-blog.component';
+import { Subject, BehaviorSubject, combineLatest, of } from 'rxjs';
+import { debounceTime, distinctUntilChanged, switchMap, map, startWith, tap, mergeMap, takeUntil, filter } from 'rxjs/operators';
 
 @Component({
   selector: 'app-blogs',
@@ -25,119 +27,131 @@ export class BlogsComponent {
   displaySelfBlogs: boolean = false; // Display only self blogs
   user : any = {};
 
+  // RxJS subjects/streams
+  private search$ = new Subject<string>();
+  private category$ = new BehaviorSubject<string>('');
+  private displaySelf$ = new BehaviorSubject<boolean>(false);
+  private refresh$ = new Subject<void>();
+  private destroy$ = new Subject<void>();
+
   constructor(private readonly blogService: BlogServiceService,private readonly dialog: MatDialog,private readonly authService: AuthServiceService,private readonly router: Router) {
   }
 
   ngOnInit() {
-    // Fetch all blogs when the component initializes
+    // Fetch user and categories
     this.user = this.authService.getCurrentUser();
-    this.fetchBlogs();
     this.blogCategories = this.blogService.blogCategories;
-  }
 
-  // Fetch all blogs from the BlogService
-  fetchBlogs() {
-    this.blogService.getBlogs().subscribe({
-      next: (response) => {
-        console.log('Fetched blogs', response);
-        this.blogs = response.data.reverse(); // Saving the original list
-        this.filteredBlogs = [...this.blogs];
+    // combine latest search/category/display/refresh and fetch using switchMap
+    combineLatest([
+      this.refresh$.pipe(startWith<void, void>(undefined)),
+      this.search$.pipe(startWith(''), debounceTime(300), distinctUntilChanged()),
+      this.category$.pipe(startWith('')),
+      this.displaySelf$.pipe(startWith(false))
+    ]).pipe(
+      // when any of those change, fetch blogs (switchMap cancels previous request)
+      switchMap(([_, search, category, displaySelf]) =>
+        this.blogService.getBlogs({ search, category }).pipe(
+          map(response => {
+            let blogs = (response?.data ?? []).slice().reverse();
+            if (displaySelf && this.user?.email) {
+              blogs = blogs.filter((b: any) => b.author === this.user.email);
+            }
+            return blogs;
+          })
+        )
+      ),
+      takeUntil(this.destroy$)
+    ).subscribe({
+      next: (blogs) => {
+        this.blogs = blogs;
+        this.filteredBlogs = [...blogs];
+        // keep total on display self if applicable
+        if (this.displaySelfBlogs) {
+          this.user.totalBlogs = this.filteredBlogs.length;
+        }
       },
-      error: (error) => {
-        console.error('Failed to fetch blogs', error);
-      }
+      error: (err) => console.error('Failed to fetch blogs', err)
     });
+
+    // trigger initial load
+    this.refresh$.next();
   }
 
+  ngOnDestroy() {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
+  // Called from template on input change; debounced before triggering fetch
   filterBlogs() {
-    this.filteredBlogs = this.blogs.filter((blog) => {
-      let matchesSearch = blog.title.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-                          blog.author.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-                          blog.description.toLowerCase().includes(this.searchQuery.toLowerCase());
-      if (this.displaySelfBlogs) {
-        matchesSearch = matchesSearch && blog.author === this.user.email;
-      }
-      const matchesCategory = this.selectedCategory ? blog.category === this.selectedCategory : true;
-      return matchesSearch && matchesCategory;
-    });
+    this.search$.next(this.searchQuery ?? '');
+    this.category$.next(this.selectedCategory ?? '');
   }
 
   resetFilters() {
     this.searchQuery = '';
     this.selectedCategory = '';
     this.filteredBlogs = [...this.blogs];
+    this.search$.next('');
+    this.category$.next('');
+    this.displaySelf$ .next(false);
+    this.displaySelfBlogs = false;
   }
 
   openNewBlogModal() {
-    const dialogRef =this.dialog.open(NewBlogComponent,{width:'500px',height:'500px'});
+    const dialogRef = this.dialog.open(NewBlogComponent,{width:'500px',height:'500px'});
 
-    dialogRef.afterClosed().subscribe(blog => {
-      if (blog) {
-
-        this.blogs.unshift(blog);
-
-        let matchesSearch = blog.title.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-                            blog.author.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-                            blog.description.toLowerCase().includes(this.searchQuery.toLowerCase());
-        if (this.displaySelfBlogs) {
-          matchesSearch = matchesSearch && blog.author === this.user.email;
-        }
-
-        if(matchesSearch && (!this.selectedCategory || blog.category === this.selectedCategory)){
-          this.filteredBlogs.unshift(blog);
-        }
-
-        console.log('New blog added:', blog);
-      }
+    // use mergeMap to process the dialog result (could be used to call API) and then refresh
+    dialogRef.afterClosed().pipe(
+      filter(blog => !!blog),
+      mergeMap(blog => of(blog).pipe(
+        tap(() => this.refresh$.next())
+      ))
+    ).subscribe({
+      next: (blog) => {
+        console.log('New blog added (dialog result):', blog);
+      },
+      error: (err) => console.error(err)
     });
   }
 
   openEditBlogModal(blog: any) {
-    const dialogRef =this.dialog.open(EditBlogComponent,{width:'500px',height:'500px',data: blog});
+    const dialogRef = this.dialog.open(EditBlogComponent,{width:'500px',height:'500px',data: blog});
 
-    dialogRef.afterClosed().subscribe(blog => {
-      if (blog) {
-
-        this.blogs = this.blogs.map( b => b.id === blog.id ? blog : b);
-
-        let matchesSearch = blog.title.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-                            blog.author.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-                            blog.description.toLowerCase().includes(this.searchQuery.toLowerCase());
-        if (this.displaySelfBlogs) {
-          matchesSearch = matchesSearch && blog.author === this.user.email;
-        }
-
-        if(matchesSearch && (!this.selectedCategory || blog.category === this.selectedCategory)){
-          this.filteredBlogs = this.filteredBlogs.map( b => b.id === blog.id ? blog : b);
-        }
-
-        console.log('New blog added:', blog);
-      }
+    dialogRef.afterClosed().pipe(
+      filter(b => !!b),
+      mergeMap(b => of(b).pipe(
+        tap(() => this.refresh$.next())
+      ))
+    ).subscribe({
+      next: (updated) => {
+        console.log('Blog edited (dialog result):', updated);
+      },
+      error: (err) => console.error(err)
     });
   }
 
   deleteBlog(id: number) {
-    this.blogService.deleteBlog(id).subscribe({
-      next : (respoinse) => {
-        console.log('Blog deleted:', respoinse);
-        if(respoinse.isSuccess) {
-          this.blogs = this.blogs.filter((blog) => blog.id !== id);
-          this.filteredBlogs = this.filteredBlogs.filter((blog) => blog.id !== id);
+    this.blogService.deleteBlog(id).pipe(
+      tap((response) => {
+        if (response?.isSuccess) {
+          // refresh to get canonical state from server
+          this.refresh$.next();
         }
-      },
-      error : (error) => {
-        console.error('Error deleting blog:', error);
-      }
+      }),
+      takeUntil(this.destroy$)
+    ).subscribe({
+      next: (resp) => console.log('Blog deleted:', resp),
+      error: (err) => console.error('Error deleting blog:', err)
     });
   }
 
   displaySelf() {
     this.resetFilters();
     this.displaySelfBlogs = true;
-    this.filteredBlogs = this.filteredBlogs.filter((blog) => {
-      return blog.author == this.user.email;
-    }); 
-    this.user.totalBlogs = this.filteredBlogs.length;
+    this.displaySelf$.next(true);
+    // total will be updated by the combineLatest subscription
   }
 
   logout() {
