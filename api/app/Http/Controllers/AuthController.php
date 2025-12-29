@@ -12,27 +12,39 @@ class AuthController extends Controller
     //hanles login functionality
     public function login(Request $request)
     {
-        try{
+        try {
             $request->validate([
                 'email' => 'required|email',
                 'password' => 'required',
             ]);
 
-            $credentials = $request->only('email', 'password');
+            /** @var User|null $user */
+            $user = User::where('email', $request->email)->first();
 
-            if (Auth::attempt($credentials)) {
-                $user = Auth::user();
-                $token = $user->createToken('api-token')->plainTextToken;
-
-                $user = $user->toArray();
-                $user['created_at'] = explode('T', $user['created_at'])[0];
-
-                return response()->json(['isSuccess' => true,'user' => $user, 'token' => $token]);
+            if (!$user || !Hash::check($request->password, $user->password)) {
+                return response()->json([
+                    'isSuccess' => false,
+                    'message' => 'Invalid Credentials',
+                ], 401);
             }
 
-            return response()->json(['isSuccess' => false,'message' => 'Invalid Credentials'], 401);
+            // Revoke old tokens (optional but recommended)
+            $user->tokens()->delete();
 
-        }catch (ValidationException $e) {
+            // Create Sanctum token
+            $token = $user->createToken('api-token')->plainTextToken;
+
+            $userData = $user->toArray();
+            $userData['created_at'] = $user->created_at->format('Y-m-d');
+
+            return response()->json([
+                'isSuccess' => true,
+                'user' => $userData,
+                'token' => $token,
+                'token_type' => 'Bearer',
+            ]);
+
+        } catch (ValidationException $e) {
             return response()->json([
                 'isSuccess' => false,
                 'message' => 'Validation failed',
@@ -82,11 +94,22 @@ class AuthController extends Controller
     //handles logout functionality
     public function logout(Request $request)
     {
-        if ($request->user()) {
-            $request->user()->tokens()->delete();
-            return response()->json(['isSuccess' => true, 'message' => 'Logged out successfully']);
+        $user = $request->user();
+
+        if (!$user) {
+            return response()->json([
+                'isSuccess' => false,
+                'message' => 'User not authenticated',
+            ], 401);
         }
-        return response()->json(['isSuccess' => false, 'message' => 'User not authenticated'], 401);
+
+        $user->currentAccessToken()->delete();
+
+        return response()->json([
+            'isSuccess' => true,
+            'message' => 'Logged out successfully',
+        ]);
     }
+
 
 }
