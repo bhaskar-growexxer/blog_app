@@ -4,6 +4,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\BlogController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\WalletController;
 
 /*
 |--------------------------------------------------------------------------
@@ -37,3 +38,5 @@ Route::group(['middleware' => AUTH_SANCTUM, 'prefix' => 'blogs', 'controller' =>
     Route::put($blogId, 'update');
     Route::delete($blogId, 'destroy');
 });
+
+Route::post('/wallets/transfer', [WalletController::class, 'transfer']);
