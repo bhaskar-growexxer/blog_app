@@ -9,10 +9,12 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
-    //hanles login functionality
+    /**
+     * Handle user login
+     */
     public function login(Request $request)
     {
-        try{
+        try {
             $request->validate([
                 'email' => 'required|email',
                 'password' => 'required',
@@ -22,17 +24,36 @@ class AuthController extends Controller
 
             if (Auth::attempt($credentials)) {
                 $user = Auth::user();
+                
+                // Check if user is active
+                if (!$user->is_active) {
+                    Auth::logout();
+                    return response()->json([
+                        'isSuccess' => false,
+                        'message' => 'Your account is inactive'
+                    ], 403);
+                }
+
                 $token = $user->createToken('api-token')->plainTextToken;
 
-                $user = $user->toArray();
-                $user['created_at'] = explode('T', $user['created_at'])[0];
-
-                return response()->json(['isSuccess' => true,'user' => $user, 'token' => $token]);
+                return response()->json([
+                    'isSuccess' => true,
+                    'user' => [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'created_at' => $user->formatted_created_at,
+                    ],
+                    'token' => $token
+                ]);
             }
 
-            return response()->json(['isSuccess' => false,'message' => 'Invalid Credentials'], 401);
+            return response()->json([
+                'isSuccess' => false,
+                'message' => 'Invalid Credentials'
+            ], 401);
 
-        }catch (ValidationException $e) {
+        } catch (ValidationException $e) {
             return response()->json([
                 'isSuccess' => false,
                 'message' => 'Validation failed',
@@ -41,36 +62,39 @@ class AuthController extends Controller
         }
     }
 
-
-    //handles register functionality
+    /**
+     * Handle user registration
+     */
     public function register(Request $request)
     {
-        try{
+        try {
             $request->validate([
                 'name' => 'required|string|max:255',
                 'email' => 'required|string|email|max:255|unique:users',
-                'password' => 'required|string|min:4',
+                'password' => 'required|string|min:8|confirmed',
             ]);
-
-            $hashedPassword = Hash::make($request->password);
 
             $user = User::create([
                 'name' => $request->name,
                 'email' => $request->email,
-                'password' => $hashedPassword,
+                'password' => Hash::make($request->password),
+                'is_active' => true,
             ]);
 
             $token = $user->createToken('api-token')->plainTextToken;
-            $user = $user->toArray();
-            $user['created_at'] = explode('T', $user['created_at'])[0];
             
             return response()->json([
                 'isSuccess' => true,
-                'user' => $user,
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'created_at' => $user->formatted_created_at,
+                ],
                 'token' => $token,
             ], 201);
 
-        }catch (ValidationException $e) {
+        } catch (ValidationException $e) {
             return response()->json([
                 'isSuccess' => false,
                 'message' => 'Validation failed',
@@ -79,14 +103,22 @@ class AuthController extends Controller
         }
     }
 
-    //handles logout functionality
+    /**
+     * Handle user logout
+     */
     public function logout(Request $request)
     {
         if ($request->user()) {
-            $request->user()->tokens()->delete();
-            return response()->json(['isSuccess' => true, 'message' => 'Logged out successfully']);
+            $request->user()->currentAccessToken()->delete();
+            return response()->json([
+                'isSuccess' => true,
+                'message' => 'Logged out successfully'
+            ]);
         }
-        return response()->json(['isSuccess' => false, 'message' => 'User not authenticated'], 401);
-    }
 
+        return response()->json([
+            'isSuccess' => false,
+            'message' => 'User not authenticated'
+        ], 401);
+    }
 }

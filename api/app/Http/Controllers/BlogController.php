@@ -4,127 +4,449 @@ namespace App\Http\Controllers;
 
 use App\Models\Blog;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
-use DateTime;
-use DateTimeZone;
+use Illuminate\Support\Facades\DB;
 
 class BlogController extends Controller
 {
-    const ID_REQUIRED_MESSAGE = "ID is required";
     const TIMEZONE = 'Asia/Kolkata';
 
     /**
-     * Display a listing of the resource.
+     * Display a listing of blogs with advanced filtering and optimization
      */
     public function index(Request $request)
     {
-        if ($request['category']) {
-            $blogs = Blog::where('category', $request['category'])->get();
-        }
-        elseif ($request['search']) {
-            $blogs = Blog::where('title', 'like', '%' . $request['search'] . '%')
-                        ->orWhere('description', 'like', '%' . $request['search'] . '%')
-                        ->orWhere('author', 'like', '%' . $request['search'] . '%')
-                        ->get();
-        }
-        else{
-            $blogs = Blog::all();
+        // Start with base query using scopes
+        $query = Blog::query();
+
+        // Apply category filter using scope
+        if ($request->has('category')) {
+            $query->ofCategory($request->category);
         }
 
-        $blogs = array_map(function($blog){
+        // Apply search filter using scope
+        if ($request->has('search')) {
+            $query->search($request->search);
+        }
 
-            $dateTime = new DateTime($blog['created_at']);
-            $blog['created_at'] = $dateTime->setTimezone(new DateTimeZone(self::TIMEZONE))->format('H:i d M Y');
-            return $blog;
-        }, $blogs->toArray());
+        // Apply status filter
+        if ($request->has('status')) {
+            if ($request->status === 'published') {
+                $query->published();
+            } elseif ($request->status === 'draft') {
+                $query->draft();
+            }
+        } else {
+            // Default: only show published blogs for public
+            $query->published();
+        }
 
-        return response()->json(['isSuccess' => true, 'data' => $blogs ?? []],200);
+        // Apply author filter using scope
+        if ($request->has('author_id')) {
+            $query->byAuthor($request->author_id);
+        }
 
+        // Apply popular filter
+        if ($request->has('popular')) {
+            $query->popular($request->get('popular', 100));
+        }
+
+        // Apply recent filter
+        if ($request->has('recent')) {
+            $query->recent($request->get('recent', 7));
+        }
+
+        // Optimize queries - prevent N+1 problem
+        $query->with([
+            'author:id,name,email',
+            'category:id,name',
+            'tags:id,name'
+        ])->withCount([
+            'comments' => function ($q) {
+                $q->where('approved', true);
+            }
+        ]);
+
+        // Order by latest
+        $query->orderBy('published_at', 'desc');
+
+        // Paginate results
+        $perPage = $request->get('per_page', 15);
+        $blogs = $query->paginate($perPage);
+
+        return response()->json([
+            'isSuccess' => true,
+            'data' => $blogs
+        ], 200);
     }
 
     /**
-     * Store a newly created resource in storage.
+     * Store a newly created blog
      */
     public function store(Request $request)
     {
-        try{
+        try {
             $request->validate([
-                'title' => 'required',
-                'author' => 'required',
-                'description' => 'required',
-                'category' => 'required',
+                'title' => 'required|string|max:255',
+                'description' => 'required|string',
+                'content' => 'required|string',
+                'category_id' => 'required|exists:categories,id',
+                'status' => 'in:draft,published,archived',
+                'tags' => 'array',
+                'tags.*' => 'exists:tags,id',
             ]);
 
-            $blog = Blog::create([
-                'title' => $request->title,
-                'author' => $request->author,
-                'category' => $request->category,
-                'description' => $request->description,
-            ]);
+            // Use database transaction for data integrity
+            DB::beginTransaction();
 
-            $blog = $blog->toArray();
-            $dateTime = new DateTime($blog['created_at']);
-            $blog['created_at'] = $dateTime->setTimezone(new DateTimeZone(self::TIMEZONE))->format('H:i d M Y');
+            try {
+                // Create blog
+                $blog = Blog::create([
+                    'title' => $request->title,
+                    'description' => $request->description,
+                    'content' => $request->content,
+                    'category_id' => $request->category_id,
+                    'author_id' => Auth::id(),
+                    'status' => $request->status ?? Blog::STATUS_DRAFT,
+                    'published_at' => $request->status === Blog::STATUS_PUBLISHED ? now() : null,
+                    'views_count' => 0,
+                ]);
 
-            return response()->json(['isSuccess' => true, 'data' => $blog],200);
+                // Attach tags if provided (polymorphic many-to-many)
+                if ($request->has('tags')) {
+                    $blog->tags()->attach($request->tags);
+                }
 
-        }catch (ValidationException $e) {
+                DB::commit();
+
+                // Load relationships for response (eager loading)
+                $blog->load([
+                    'author:id,name,email',
+                    'category:id,name',
+                    'tags:id,name'
+                ]);
+
+                return response()->json([
+                    'isSuccess' => true,
+                    'message' => 'Blog created successfully',
+                    'data' => $blog
+                ], 201);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
+            }
+
+        } catch (ValidationException $e) {
             return response()->json([
                 'isSuccess' => false,
                 'message' => 'Validation failed',
                 'errors' => $e->errors(),
             ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'isSuccess' => false,
+                'message' => 'An error occurred while creating the blog',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
     /**
-     * Display the specified resource.
+     * Display the specified blog with optimized relationships
      */
-    public function show(String $id)
+    public function show(string $id)
     {
-        if(!empty($id)){
-            return response()->json(['isSuccess' => true, 'data' => Blog::find($id)],200);
+        try {
+            // Use eager loading to prevent N+1 queries
+            $blog = Blog::with([
+                    'author:id,name,email',
+                    'category:id,name,description',
+                    'approvedComments' => function ($query) {
+                        $query->with('user:id,name')
+                              ->orderBy('created_at', 'desc')
+                              ->limit(10);
+                    },
+                    'tags:id,name'
+                ])
+                ->withCount('comments')
+                ->findOrFail($id);
+
+            // Increment views count
+            $blog->increment('views_count');
+
+            return response()->json([
+                'isSuccess' => true,
+                'data' => $blog
+            ], 200);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'isSuccess' => false,
+                'message' => 'Blog not found'
+            ], 404);
         }
-        return response()->json(['isSuccess' => false, 'mesage' => self::ID_REQUIRED_MESSAGE], 422);
     }
 
     /**
-     * Update the specified resource in storage.
+     * Update the specified blog
      */
-    public function update(String $id,Request $request)
+    public function update(string $id, Request $request)
     {
-        if(!empty($id)){
-            $blog = Blog::find($request['id']);
+        try {
+            // Find blog or fail
+            $blog = Blog::findOrFail($id);
 
-            if($blog->exists() && $blog->author == $request->user()->email){
-                $blog->update([
-                    'title' => $request->title ?? $blog->title,
-                    'category' => $request->category ?? $blog->category,
-                    'description' => $request->description ?? $blog->description,
+            // Check authorization - only author can update
+            if ($blog->author_id !== Auth::id()) {
+                return response()->json([
+                    'isSuccess' => false,
+                    'message' => 'You are not authorized to update this blog'
+                ], 403);
+            }
+
+            // Validate request
+            $request->validate([
+                'title' => 'string|max:255',
+                'description' => 'string',
+                'content' => 'string',
+                'category_id' => 'exists:categories,id',
+                'status' => 'in:draft,published,archived',
+                'tags' => 'array',
+                'tags.*' => 'exists:tags,id',
+            ]);
+
+            DB::beginTransaction();
+
+            try {
+                // Update blog fields
+                $blog->update($request->only([
+                    'title',
+                    'description',
+                    'content',
+                    'category_id',
+                    'status'
+                ]));
+
+                // Update published_at if status changed to published
+                if ($request->status === Blog::STATUS_PUBLISHED && !$blog->published_at) {
+                    $blog->update(['published_at' => now()]);
+                }
+
+                // Sync tags if provided (polymorphic many-to-many)
+                if ($request->has('tags')) {
+                    $blog->tags()->sync($request->tags);
+                }
+
+                DB::commit();
+
+                // Load updated relationships
+                $blog->load([
+                    'author:id,name,email',
+                    'category:id,name',
+                    'tags:id,name'
                 ]);
-                return response()->json(['isSuccess' => true, 'data' =>$blog], 200);
-            }
-            
-            return response()->json(['isSuccess' => false, 'message' => 'You are not authorized to delete this blog'], 401);
 
+                return response()->json([
+                    'isSuccess' => true,
+                    'message' => 'Blog updated successfully',
+                    'data' => $blog
+                ], 200);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
+            }
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'isSuccess' => false,
+                'message' => 'Blog not found'
+            ], 404);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'isSuccess' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'isSuccess' => false,
+                'message' => 'An error occurred while updating the blog',
+                'error' => $e->getMessage()
+            ], 500);
         }
-        return response()->json(['isSuccess' => false, 'message' => self::ID_REQUIRED_MESSAGE], 422);
     }
 
     /**
-     * Remove the specified resource from storage.
+     * Remove the specified blog (soft delete)
      */
-    public function destroy(String $id,Request $request)
+    public function destroy(string $id)
     {
-        if(!empty($id)){
-            $blog = Blog::find($id);
-            if($blog->exists() && $blog->author == $request->user()->email){
-                $blog->delete();
-                return response()->json(['isSuccess' => true, 'message' => 'blog deleted'], 200);
-            }
-            return response()->json(['isSuccess' => false, 'message' => 'You are not authorized to delete this blog'], 401);
+        try {
+            // Find blog or fail
+            $blog = Blog::findOrFail($id);
 
+            // Check authorization - only author can delete
+            if ($blog->author_id !== Auth::id()) {
+                return response()->json([
+                    'isSuccess' => false,
+                    'message' => 'You are not authorized to delete this blog'
+                ], 403);
+            }
+
+            // Soft delete the blog
+            $blog->delete();
+
+            return response()->json([
+                'isSuccess' => true,
+                'message' => 'Blog deleted successfully'
+            ], 200);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'isSuccess' => false,
+                'message' => 'Blog not found'
+            ], 404);
+        } catch (\Exception $e) {
+            return response()->json([
+                'isSuccess' => false,
+                'message' => 'An error occurred while deleting the blog',
+                'error' => $e->getMessage()
+            ], 500);
         }
-        return response()->json(['isSuccess' => false, 'message' => self::ID_REQUIRED_MESSAGE], 422);
+    }
+
+    /**
+     * Get popular blogs using scope
+     */
+    public function popular(Request $request)
+    {
+        $threshold = $request->get('threshold', 100);
+
+        $blogs = Blog::published()
+            ->popular($threshold)
+            ->with([
+                'author:id,name,email',
+                'category:id,name',
+                'tags:id,name'
+            ])
+            ->withCount('comments')
+            ->orderByDesc('views_count')
+            ->limit(10)
+            ->get();
+
+        return response()->json([
+            'isSuccess' => true,
+            'data' => $blogs
+        ], 200);
+    }
+
+    /**
+     * Get user's own blogs using scope and relationship filtering
+     */
+    public function myBlogs(Request $request)
+    {
+        // Using scope to filter by authenticated user
+        $blogs = Blog::byAuthor(Auth::id())
+            ->with([
+                'category:id,name',
+                'tags:id,name'
+            ])
+            ->withCount('comments')
+            ->orderBy('created_at', 'desc')
+            ->paginate($request->get('per_page', 10));
+
+        return response()->json([
+            'isSuccess' => true,
+            'data' => $blogs
+        ], 200);
+    }
+
+    /**
+     * Get blogs by category with optimized queries
+     */
+    public function byCategory(string $categoryId)
+    {
+        try {
+            // Using whereHas to filter by relationship
+            $blogs = Blog::published()
+                ->ofCategory($categoryId)
+                ->whereHas('category', function ($query) {
+                    $query->where('is_active', true);
+                })
+                ->with([
+                    'author:id,name,email',
+                    'category:id,name,description',
+                    'tags:id,name'
+                ])
+                ->withCount('comments')
+                ->orderBy('published_at', 'desc')
+                ->paginate(15);
+
+            return response()->json([
+                'isSuccess' => true,
+                'data' => $blogs
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'isSuccess' => false,
+                'message' => 'An error occurred',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get blogs with approved comments using whereHas
+     */
+    public function withComments()
+    {
+        // Using whereHas to filter blogs that have approved comments
+        $blogs = Blog::published()
+            ->whereHas('comments', function ($query) {
+                $query->where('approved', true);
+            })
+            ->with([
+                'author:id,name,email',
+                'approvedComments' => function ($query) {
+                    $query->with('user:id,name')->limit(3);
+                }
+            ])
+            ->withCount(['comments' => function ($q) {
+                $q->where('approved', true);
+            }])
+            ->orderBy('published_at', 'desc')
+            ->paginate(10);
+
+        return response()->json([
+            'isSuccess' => true,
+            'data' => $blogs
+        ], 200);
+    }
+
+    /**
+     * Get recent blogs using scope
+     */
+    public function recent(Request $request)
+    {
+        $days = $request->get('days', 7);
+
+        $blogs = Blog::published()
+            ->recent($days)
+            ->with([
+                'author:id,name,email',
+                'category:id,name'
+            ])
+            ->withCount('comments')
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return response()->json([
+            'isSuccess' => true,
+            'data' => $blogs
+        ], 200);
     }
 }
