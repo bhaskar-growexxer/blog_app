@@ -28,12 +28,12 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
 
-Route::group(['middleware' => AUTH_SANCTUM, 'prefix' => 'blogs', 'controller' => BlogController::class], function () {
+Route::group(['middleware' => [AUTH_SANCTUM, 'rate_limit:60,60'], 'prefix' => 'blogs', 'controller' => BlogController::class], function () {
     Route::get('/', 'index');
-    Route::post('/', 'store');
+    Route::post('/', 'store')->middleware('ensure_role:author'); // only 'author' allowed to create
 
     $blogId = '/{id}';
     Route::get($blogId, 'show');
-    Route::put($blogId, 'update');
-    Route::delete($blogId, 'destroy');
+    Route::put($blogId, 'update')->middleware('ensure_role:author'); // protect updates
+    Route::delete($blogId, 'destroy')->middleware('ensure_role:admin'); // only admin can delete
 });
