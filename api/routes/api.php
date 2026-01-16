@@ -36,4 +36,7 @@ Route::group(['middleware' => AUTH_SANCTUM, 'prefix' => 'blogs', 'controller' =>
     Route::get($blogId, 'show');
     Route::put($blogId, 'update');
     Route::delete($blogId, 'destroy');
+
+    Route::get('attachments/{attachmentId}/download', 'downloadAttachment');
+    Route::delete('attachments/{attachmentId}', 'deleteAttachment');
 });

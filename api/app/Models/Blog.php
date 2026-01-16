@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Blog extends Model
 {
@@ -22,4 +23,12 @@ class Blog extends Model
         'author_email',
         'created_at',
     ];
+
+    /**
+     * Get the attachments for the blog.
+     */
+    public function attachments(): HasMany
+    {
+        return $this->hasMany(BlogAttachment::class);
+    }
 }
