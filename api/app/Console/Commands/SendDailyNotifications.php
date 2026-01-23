@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use App\Models\Blog;
 use App\Services\EmailService;
+use App\Services\ScheduledTaskMonitor;
 use Carbon\Carbon;
 
 class SendDailyNotifications extends Command
@@ -26,24 +27,37 @@ class SendDailyNotifications extends Command
      */
     public function handle(EmailService $emailService)
     {
-        // Get today’s date
-        $today = Carbon::today();
+        try {
+            $this->info('Starting daily notification process...');
 
-        // Retrieve blogs created today
-        $blogs = Blog::whereDate('created_at', $today)->get();
+            // Get today’s date
+            $today = Carbon::today();
 
-        if ($blogs->isEmpty()) {
-            $this->info('No new blog posts today.');
-            return 0;
+            // Retrieve blogs created today
+            $blogs = Blog::whereDate('created_at', $today)->get();
+
+            if ($blogs->isEmpty()) {
+                $this->info('No new blog posts today.');
+                ScheduledTaskMonitor::recordExecution('send:daily-notifications', true, 'No new blogs');
+                return Command::SUCCESS;
+            }
+
+            $sent = 0;
+            // Loop through blogs and send email notifications
+            foreach ($blogs as $blog) {
+                $emailService->sendNewBlogNotification($blog);
+                $sent++;
+            }
+
+            $this->info("Sent notifications for {$sent} blog(s)");
+            ScheduledTaskMonitor::recordExecution('send:daily-notifications', true, "Sent {$sent} notifications");
+
+            return Command::SUCCESS;
+        } catch (\Exception $e) {
+            $this->error('Failed to send notifications: ' . $e->getMessage());
+            ScheduledTaskMonitor::recordExecution('send:daily-notifications', false, $e->getMessage());
+
+            return Command::FAILURE;
         }
-
-        // Loop through blogs and send email notifications
-        foreach ($blogs as $blog) {
-            $emailService->sendNewBlogNotification($blog);
-            $this->info("Notification sent for blog: {$blog->title}");
-        }
-
-        $this->info('Daily notifications sent successfully!');
-        return 0;
     }
 }
