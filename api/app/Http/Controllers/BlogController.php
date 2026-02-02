@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use DateTime;
 use DateTimeZone;
+use App\Contracts\LoggerInterface;
 
 class BlogController extends Controller
 {
@@ -16,6 +17,13 @@ class BlogController extends Controller
     /**
      * Display a listing of the resource.
      */
+    private LoggerInterface $logger;
+
+    public function __construct(LoggerInterface $logger)
+    {
+        $this->logger = $logger;
+    }
+
     public function index(Request $request)
     {
         if ($request['category']) {
@@ -65,6 +73,9 @@ class BlogController extends Controller
             $blog = $blog->toArray();
             $dateTime = new DateTime($blog['created_at']);
             $blog['created_at'] = $dateTime->setTimezone(new DateTimeZone(self::TIMEZONE))->format('H:i d M Y');
+
+            // Log creation via injected logger (contextual binding may change implementation)
+            $this->logger->log('Blog created: ' . ($blog['title'] ?? 'unknown'));
 
             return response()->json(['isSuccess' => true, 'data' => $blog],200);
 
@@ -120,6 +131,7 @@ class BlogController extends Controller
             $blog = Blog::find($id);
             if($blog->exists() && $blog->author == $request->user()->email){
                 $blog->delete();
+                $this->logger->log('Blog deleted: ' . $blog->id);
                 return response()->json(['isSuccess' => true, 'message' => 'blog deleted'], 200);
             }
             return response()->json(['isSuccess' => false, 'message' => 'You are not authorized to delete this blog'], 401);
